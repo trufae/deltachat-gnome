@@ -447,7 +447,7 @@ namespace Dc {
                 for (uint i = 0; i < messages.length; i++) {
                     var msg = messages[i];
                     message_store.append (msg);
-                    message_listbox.append (new MessageRow (msg));
+                    message_listbox.append (create_message_row (msg));
                 }
 
                 scroll_to_bottom ();
@@ -473,6 +473,12 @@ namespace Dc {
         private void scroll_to_bottom () {
             stick_to_bottom = true;
             maybe_autoscroll ();
+        }
+
+        private MessageRow create_message_row (Message msg) {
+            var row = new MessageRow (msg);
+            row.quote_clicked.connect ((qid) => { scroll_to_message (qid); });
+            return row;
         }
 
         /* Insert a message row at the correct chronological position. */
@@ -556,12 +562,12 @@ namespace Dc {
          *  Sending
          * ================================================================ */
 
-        private void on_send_message (string text, string? file_path, string? file_name) {
+        private void on_send_message (string text, string? file_path, string? file_name, int quote_msg_id) {
             if (current_chat_id <= 0) return;
-            do_send.begin (text, file_path, file_name);
+            do_send.begin (text, file_path, file_name, quote_msg_id);
         }
 
-        private async void do_send (string text, string? file_path, string? file_name) {
+        private async void do_send (string text, string? file_path, string? file_name, int quote_msg_id) {
             var rpc = ((Dc.Application) this.application).rpc;
             try {
                 string? send_text = text.length > 0 ? text : null;
@@ -569,7 +575,8 @@ namespace Dc {
                 string? send_name = file_name;
 
                 int msg_id = yield rpc.send_msg (rpc.account_id, current_chat_id,
-                                                  send_text, send_file, send_name);
+                                                  send_text, send_file, send_name,
+                                                  quote_msg_id);
 
                 /* Append the sent message directly instead of reloading all */
                 if (msg_id > 0) {
@@ -577,7 +584,7 @@ namespace Dc {
                     if (msg_obj != null) {
                         var msg = RpcClient.parse_message (msg_obj, self_email);
                         message_store.append (msg);
-                        insert_message_sorted (new MessageRow (msg));
+                        insert_message_sorted (create_message_row (msg));
                         scroll_to_bottom ();
                     }
                 }
@@ -647,7 +654,7 @@ namespace Dc {
                            Auto-scroll kicks in if user was at bottom. */
                         if (msg.chat_id == current_chat_id) {
                             message_store.append (msg);
-                            var row = new MessageRow (msg);
+                            var row = create_message_row (msg);
                             insert_message_sorted (row);
                             row.highlight ();
                         }
@@ -794,6 +801,15 @@ namespace Dc {
             vbox.margin_top = 4;
             vbox.margin_bottom = 4;
 
+            /* Reply button (for all messages) */
+            var reply_btn = new Gtk.Button.with_label ("Reply");
+            reply_btn.add_css_class ("flat");
+            reply_btn.clicked.connect (() => {
+                popover.popdown ();
+                start_replying_message (msg_id);
+            });
+            vbox.append (reply_btn);
+
             if (is_outgoing) {
                 /* Allow editing only if the message has text */
                 bool has_text = false;
@@ -911,6 +927,44 @@ namespace Dc {
             }
         }
 
+        private void start_replying_message (int msg_id) {
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var m = (Message) message_store.get_item (i);
+                if (m.id == msg_id) {
+                    string sender = m.is_outgoing ? "You" : (m.sender_name ?? "");
+                    string preview = m.text ?? "(attachment)";
+                    compose_bar.begin_reply (msg_id, sender, preview);
+                    return;
+                }
+            }
+        }
+
+        private void scroll_to_message (int msg_id) {
+            int idx = 0;
+            Gtk.ListBoxRow? row;
+            while ((row = message_listbox.get_row_at_index (idx)) != null) {
+                var mr = row as MessageRow;
+                if (mr != null && mr.message_id == msg_id) {
+                    /* Scroll so the row is visible, then highlight it */
+                    int row_y;
+                    Graphene.Point pt;
+                    if (row.compute_point (message_listbox, { 0, 0 }, out pt)) {
+                        row_y = (int) pt.y;
+                    } else {
+                        row_y = idx * 60; /* rough fallback */
+                    }
+                    var adj = message_scroll.vadjustment;
+                    double target = double.min (row_y, adj.upper - adj.page_size);
+                    if (target < 0) target = 0;
+                    adj.value = target;
+                    stick_to_bottom = is_near_bottom ();
+                    mr.highlight ();
+                    return;
+                }
+                idx++;
+            }
+        }
+
         private void on_edit_message (int msg_id, string new_text) {
             do_edit_message.begin (msg_id, new_text);
         }
@@ -938,7 +992,7 @@ namespace Dc {
                     var mr = row as MessageRow;
                     if (mr != null && mr.message_id == msg_id) {
                         message_listbox.remove (row);
-                        var new_row = new MessageRow (msg);
+                        var new_row = create_message_row (msg);
                         message_listbox.insert (new_row, idx);
                         return;
                     }

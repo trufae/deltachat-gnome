@@ -6,7 +6,7 @@ namespace Dc {
      */
     public class ComposeBar : Gtk.Box {
 
-        public signal void send_message (string text, string? file_path, string? file_name);
+        public signal void send_message (string text, string? file_path, string? file_name, int quote_msg_id);
         public signal void edit_message (int msg_id, string new_text);
 
         private Gtk.Entry text_entry;
@@ -14,14 +14,18 @@ namespace Dc {
         private Gtk.Button attach_button;
         private Gtk.Button cancel_attach_button;
         private Gtk.Button cancel_edit_button;
+        private Gtk.Button cancel_reply_button;
+        private Gtk.Label reply_label;
+        private Gtk.Box reply_bar;
         private string? pending_file = null;
         private string? pending_file_name = null;
         private int editing_msg_id = 0;
+        private int replying_msg_id = 0;
 
         public ComposeBar () {
             Object (
-                orientation: Gtk.Orientation.HORIZONTAL,
-                spacing: 6
+                orientation: Gtk.Orientation.VERTICAL,
+                spacing: 0
             );
             add_css_class ("compose-bar");
             margin_start = 8;
@@ -29,13 +33,38 @@ namespace Dc {
             margin_top = 6;
             margin_bottom = 6;
 
+            /* Reply indicator bar (hidden by default) */
+            reply_bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            reply_bar.add_css_class ("reply-bar");
+            reply_bar.visible = false;
+
+            reply_label = new Gtk.Label ("");
+            reply_label.add_css_class ("reply-label");
+            reply_label.halign = Gtk.Align.START;
+            reply_label.hexpand = true;
+            reply_label.ellipsize = Pango.EllipsizeMode.END;
+            reply_bar.append (reply_label);
+
+            cancel_reply_button = new Gtk.Button.from_icon_name ("window-close-symbolic");
+            cancel_reply_button.add_css_class ("flat");
+            cancel_reply_button.add_css_class ("circular");
+            cancel_reply_button.tooltip_text = "Cancel reply";
+            cancel_reply_button.valign = Gtk.Align.CENTER;
+            cancel_reply_button.clicked.connect (cancel_reply);
+            reply_bar.append (cancel_reply_button);
+
+            append (reply_bar);
+
+            /* Input row */
+            var input_row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+
             /* Attach button */
             attach_button = new Gtk.Button.from_icon_name ("mail-attachment-symbolic");
             attach_button.add_css_class ("flat");
             attach_button.tooltip_text = "Attach file";
             attach_button.valign = Gtk.Align.CENTER;
             attach_button.clicked.connect (on_attach_clicked);
-            append (attach_button);
+            input_row.append (attach_button);
 
             /* Cancel attachment button (hidden by default) */
             cancel_attach_button = new Gtk.Button.from_icon_name ("edit-clear-symbolic");
@@ -44,7 +73,7 @@ namespace Dc {
             cancel_attach_button.valign = Gtk.Align.CENTER;
             cancel_attach_button.visible = false;
             cancel_attach_button.clicked.connect (clear_attachment);
-            append (cancel_attach_button);
+            input_row.append (cancel_attach_button);
 
             /* Cancel edit button (hidden by default) */
             cancel_edit_button = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
@@ -53,7 +82,7 @@ namespace Dc {
             cancel_edit_button.valign = Gtk.Align.CENTER;
             cancel_edit_button.visible = false;
             cancel_edit_button.clicked.connect (cancel_edit);
-            append (cancel_edit_button);
+            input_row.append (cancel_edit_button);
 
             /* Text entry with paste handler */
             text_entry = new Gtk.Entry ();
@@ -64,7 +93,7 @@ namespace Dc {
             var paste_ctrl = new Gtk.EventControllerKey ();
             paste_ctrl.key_pressed.connect (on_entry_key_pressed);
             text_entry.add_controller (paste_ctrl);
-            append (text_entry);
+            input_row.append (text_entry);
 
             /* Send button */
             send_button = new Gtk.Button.from_icon_name ("go-up-symbolic");
@@ -73,7 +102,9 @@ namespace Dc {
             send_button.tooltip_text = "Send message";
             send_button.valign = Gtk.Align.CENTER;
             send_button.clicked.connect (on_send);
-            append (send_button);
+            input_row.append (send_button);
+
+            append (input_row);
         }
 
         public void grab_entry_focus () {
@@ -113,12 +144,29 @@ namespace Dc {
                 return;
             }
             if (text.length == 0 && pending_file == null) return;
-            send_message (text, pending_file, pending_file_name);
+            int qid = replying_msg_id;
+            send_message (text, pending_file, pending_file_name, qid);
+            cancel_reply ();
             clear ();
+        }
+
+        public void begin_reply (int msg_id, string sender_name, string preview) {
+            cancel_edit ();
+            replying_msg_id = msg_id;
+            reply_label.label = "%s: %s".printf (sender_name, preview);
+            reply_bar.visible = true;
+            text_entry.grab_focus ();
+        }
+
+        private void cancel_reply () {
+            replying_msg_id = 0;
+            reply_bar.visible = false;
+            reply_label.label = "";
         }
 
         public void begin_edit (int msg_id, string current_text) {
             cancel_edit ();
+            cancel_reply ();
             clear_attachment ();
             editing_msg_id = msg_id;
             text_entry.text = current_text;

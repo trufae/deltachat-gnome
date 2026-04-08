@@ -383,7 +383,8 @@ namespace Dc {
 
         public async int send_msg (int acct_id, int chat_id, string? text,
                                     string? file_path = null,
-                                    string? file_name = null) throws Error {
+                                    string? file_name = null,
+                                    int quoted_msg_id = 0) throws Error {
             var b = new Json.Builder ();
             b.begin_array ();
             b.add_int_value (acct_id);
@@ -394,8 +395,9 @@ namespace Dc {
             else b.add_null_value ();
             if (file_name != null) b.add_string_value (file_name);
             else b.add_null_value ();
-            b.add_null_value (); /* html */
-            b.add_null_value (); /* viewtype */
+            b.add_null_value (); /* location */
+            if (quoted_msg_id > 0) b.add_int_value (quoted_msg_id);
+            else b.add_null_value ();
             b.end_array ();
             var result = yield call ("misc_send_msg", b.get_root ());
             /* Returns [messageId, ...] */
@@ -656,6 +658,18 @@ namespace Dc {
                         msg.reactions = sb.str;
                     }
                 }
+            }
+
+            /* Quote / reply */
+            if (obj.has_member ("quote") && !obj.get_member ("quote").is_null ()) {
+                var quote = obj.get_object_member ("quote");
+                if (quote.has_member ("text") && !quote.get_member ("text").is_null ())
+                    msg.quote_text = quote.get_string_member ("text");
+                if (quote.has_member ("authorDisplayName") &&
+                    !quote.get_member ("authorDisplayName").is_null ())
+                    msg.quote_sender_name = quote.get_string_member ("authorDisplayName");
+                if (quote.has_member ("messageId"))
+                    msg.quote_msg_id = (int) quote.get_int_member ("messageId");
             }
 
             return msg;

@@ -11,6 +11,9 @@ namespace Dc {
         public bool is_outgoing { get; private set; }
         public string? file_path { get; private set; }
         public string? file_name { get; private set; }
+        public int quote_msg_id { get; private set; }
+
+        public signal void quote_clicked (int quoted_msg_id);
 
         public void highlight () {
             this.add_css_class ("message-new");
@@ -26,6 +29,7 @@ namespace Dc {
             this.is_outgoing = msg.is_outgoing;
             this.file_path = msg.file_path;
             this.file_name = msg.file_name;
+            this.quote_msg_id = msg.quote_msg_id;
             this.selectable = false;
 
             bool has_attachment = (msg.file_path != null && msg.file_path.length > 0);
@@ -58,6 +62,39 @@ namespace Dc {
                 sender.halign = Gtk.Align.START;
                 sender.xalign = 0;
                 bubble.append (sender);
+            }
+
+            /* Quoted / reply block */
+            if (msg.quote_text != null && msg.quote_text.length > 0) {
+                var quote_btn = new Gtk.Button ();
+                quote_btn.add_css_class ("flat");
+                quote_btn.add_css_class ("quote-block");
+
+                var quote_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 1);
+                if (msg.quote_sender_name != null && msg.quote_sender_name.length > 0) {
+                    var q_sender = new Gtk.Label (msg.quote_sender_name);
+                    q_sender.add_css_class ("quote-sender");
+                    q_sender.halign = Gtk.Align.START;
+                    q_sender.xalign = 0;
+                    quote_box.append (q_sender);
+                }
+                var q_text = new Gtk.Label (msg.quote_text);
+                q_text.add_css_class ("quote-text");
+                q_text.halign = Gtk.Align.START;
+                q_text.xalign = 0;
+                q_text.ellipsize = Pango.EllipsizeMode.END;
+                q_text.max_width_chars = 40;
+                q_text.lines = 2;
+                quote_box.append (q_text);
+
+                quote_btn.child = quote_box;
+                if (msg.quote_msg_id > 0) {
+                    int qid = msg.quote_msg_id;
+                    quote_btn.clicked.connect (() => {
+                        quote_clicked (qid);
+                    });
+                }
+                bubble.append (quote_btn);
             }
 
             /* File attachment */

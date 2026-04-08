@@ -91,6 +91,33 @@ namespace Dc {
                 background-color: alpha(@accent_bg_color, 0.15);
                 transition: background-color 2s ease-out;
             }
+            .quote-block {
+                border-left: 3px solid @accent_bg_color;
+                padding: 4px 8px;
+                margin-bottom: 4px;
+                background-color: alpha(@view_fg_color, 0.05);
+                border-radius: 4px;
+            }
+            .quote-sender {
+                font-size: small;
+                font-weight: bold;
+                color: @accent_color;
+            }
+            .quote-text {
+                font-size: small;
+                opacity: 0.75;
+            }
+            .reply-bar {
+                padding: 4px 8px;
+                margin-bottom: 4px;
+                border-left: 3px solid @accent_bg_color;
+                background-color: alpha(@view_fg_color, 0.05);
+                border-radius: 4px;
+            }
+            .reply-label {
+                font-size: small;
+                opacity: 0.8;
+            }
         """;
     }
 }
