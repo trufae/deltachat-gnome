@@ -12,6 +12,7 @@ namespace Dc {
         private Gtk.Entry text_entry;
         private Gtk.Button send_button;
         private Gtk.Button attach_button;
+        private Gtk.Button cancel_attach_button;
         private string? pending_file = null;
 
         public ComposeBar () {
@@ -32,6 +33,15 @@ namespace Dc {
             attach_button.valign = Gtk.Align.CENTER;
             attach_button.clicked.connect (on_attach_clicked);
             append (attach_button);
+
+            /* Cancel attachment button (hidden by default) */
+            cancel_attach_button = new Gtk.Button.from_icon_name ("edit-clear-symbolic");
+            cancel_attach_button.add_css_class ("flat");
+            cancel_attach_button.tooltip_text = "Remove attachment";
+            cancel_attach_button.valign = Gtk.Align.CENTER;
+            cancel_attach_button.visible = false;
+            cancel_attach_button.clicked.connect (clear_attachment);
+            append (cancel_attach_button);
 
             /* Text entry */
             text_entry = new Gtk.Entry ();
@@ -57,7 +67,13 @@ namespace Dc {
 
         public void clear () {
             text_entry.text = "";
+            clear_attachment ();
+        }
+
+        private void clear_attachment () {
             pending_file = null;
+            cancel_attach_button.visible = false;
+            text_entry.placeholder_text = "Type a message…";
         }
 
         private void on_send () {
@@ -84,6 +100,7 @@ namespace Dc {
                             text_entry.text = "";
                         }
                         text_entry.placeholder_text = "📎 %s — Type a caption…".printf (basename);
+                        cancel_attach_button.visible = true;
                     }
                 } catch (Error e) {
                     /* User cancelled */
