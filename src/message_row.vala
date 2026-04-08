@@ -50,39 +50,49 @@ namespace Dc {
                 bubble.append (sender);
             }
 
-            /* File attachment indicator */
-            if (msg.file_name != null && msg.file_name.length > 0) {
-                var file_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
-                file_box.add_css_class ("message-attachment");
+            /* File attachment */
+            bool has_file = (msg.file_name != null && msg.file_name.length > 0)
+                         || (msg.file_path != null && msg.file_path.length > 0);
+            if (has_file) {
+                /* Debug: log what the RPC gave us */
+                stderr.printf ("MSG %d: file_path=%s file_name=%s file_mime=%s view_type=%s\n",
+                    msg.id,
+                    msg.file_path ?? "(null)",
+                    msg.file_name ?? "(null)",
+                    msg.file_mime ?? "(null)",
+                    msg.view_type ?? "(null)");
 
-                var icon = new Gtk.Image.from_icon_name ("mail-attachment-symbolic");
-                icon.pixel_size = 16;
-                file_box.append (icon);
+                bool image_shown = false;
 
-                var fname = new Gtk.Label (msg.file_name);
-                fname.add_css_class ("dim-label");
-                fname.ellipsize = Pango.EllipsizeMode.MIDDLE;
-                fname.max_width_chars = 28;
-                file_box.append (fname);
-
-                bubble.append (file_box);
-
-                /* Try to show image preview for image types */
-                if (msg.file_mime != null && msg.file_mime.has_prefix ("image/") &&
-                    msg.file_path != null &&
-                    FileUtils.test (msg.file_path, FileTest.EXISTS)) {
+                /* Try to show inline image preview */
+                if (msg.file_path != null &&
+                    FileUtils.test (msg.file_path, FileTest.EXISTS) &&
+                    is_image_file (msg)) {
                     try {
                         var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
-                            msg.file_path, 280, 280, true);
+                            msg.file_path, 400, 400, true);
+                        int dw = pixbuf.width;
+                        int dh = pixbuf.height;
+                        if (dw > 260) {
+                            dh = (int) ((double) dh * 260.0 / (double) dw);
+                            dw = 260;
+                        }
                         var texture = Gdk.Texture.for_pixbuf (pixbuf);
                         var picture = new Gtk.Picture.for_paintable (texture);
                         picture.content_fit = Gtk.ContentFit.CONTAIN;
-                        picture.width_request = 200;
+                        picture.can_shrink = false;
+                        picture.set_size_request (dw, dh);
                         picture.add_css_class ("message-image");
                         bubble.append (picture);
+                        image_shown = true;
                     } catch (Error e) {
-                        /* Skip image preview on error */
+                        stderr.printf ("  -> Image load failed: %s\n", e.message);
                     }
+                }
+
+                /* Show attachment indicator if image wasn't shown */
+                if (!image_shown) {
+                    bubble.append (build_file_indicator (msg));
                 }
             }
 
@@ -130,6 +140,42 @@ namespace Dc {
             label.margin_bottom = 4;
             label.wrap = true;
             this.child = label;
+        }
+
+        private static bool is_image_file (Message msg) {
+            if (msg.file_mime != null && msg.file_mime.has_prefix ("image/"))
+                return true;
+            if (msg.view_type != null) {
+                var vt = msg.view_type.down ();
+                if (vt == "image" || vt == "gif" || vt == "sticker")
+                    return true;
+            }
+            if (msg.file_path != null) {
+                var lower = msg.file_path.down ();
+                if (lower.has_suffix (".jpg") || lower.has_suffix (".jpeg") ||
+                    lower.has_suffix (".png") || lower.has_suffix (".webp") ||
+                    lower.has_suffix (".gif") || lower.has_suffix (".bmp") ||
+                    lower.has_suffix (".svg"))
+                    return true;
+            }
+            return false;
+        }
+
+        private static Gtk.Box build_file_indicator (Message msg) {
+            var file_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+            file_box.add_css_class ("message-attachment");
+
+            var icon = new Gtk.Image.from_icon_name ("mail-attachment-symbolic");
+            icon.pixel_size = 16;
+            file_box.append (icon);
+
+            var fname = new Gtk.Label (msg.file_name ?? "file");
+            fname.add_css_class ("dim-label");
+            fname.ellipsize = Pango.EllipsizeMode.MIDDLE;
+            fname.max_width_chars = 28;
+            file_box.append (fname);
+
+            return file_box;
         }
 
         private static string format_timestamp (int64 ts) {
