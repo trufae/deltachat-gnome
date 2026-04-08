@@ -408,6 +408,17 @@ namespace Dc {
             return 0;
         }
 
+        public async void send_edit_request (int acct_id, int msg_id,
+                                              string new_text) throws Error {
+            var b = new Json.Builder ();
+            b.begin_array ();
+            b.add_int_value (acct_id);
+            b.add_int_value (msg_id);
+            b.add_string_value (new_text);
+            b.end_array ();
+            yield call ("send_edit_request", b.get_root ());
+        }
+
         public async void send_reaction (int acct_id, int msg_id,
                                           string[] emojis) throws Error {
             var b = new Json.Builder ();

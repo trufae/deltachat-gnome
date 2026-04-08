@@ -7,13 +7,16 @@ namespace Dc {
     public class ComposeBar : Gtk.Box {
 
         public signal void send_message (string text, string? file_path);
+        public signal void edit_message (int msg_id, string new_text);
         public signal void attach_file ();
 
         private Gtk.Entry text_entry;
         private Gtk.Button send_button;
         private Gtk.Button attach_button;
         private Gtk.Button cancel_attach_button;
+        private Gtk.Button cancel_edit_button;
         private string? pending_file = null;
+        private int editing_msg_id = 0;
 
         public ComposeBar () {
             Object (
@@ -42,6 +45,15 @@ namespace Dc {
             cancel_attach_button.visible = false;
             cancel_attach_button.clicked.connect (clear_attachment);
             append (cancel_attach_button);
+
+            /* Cancel edit button (hidden by default) */
+            cancel_edit_button = new Gtk.Button.from_icon_name ("edit-undo-symbolic");
+            cancel_edit_button.add_css_class ("flat");
+            cancel_edit_button.tooltip_text = "Cancel editing";
+            cancel_edit_button.valign = Gtk.Align.CENTER;
+            cancel_edit_button.visible = false;
+            cancel_edit_button.clicked.connect (cancel_edit);
+            append (cancel_edit_button);
 
             /* Text entry */
             text_entry = new Gtk.Entry ();
@@ -78,10 +90,36 @@ namespace Dc {
 
         private void on_send () {
             string text = text_entry.text.strip ();
+            if (editing_msg_id > 0) {
+                if (text.length == 0) return;
+                edit_message (editing_msg_id, text);
+                cancel_edit ();
+                return;
+            }
             if (text.length == 0 && pending_file == null) return;
 
             send_message (text, pending_file);
             clear ();
+        }
+
+        public void begin_edit (int msg_id, string current_text) {
+            cancel_edit ();
+            clear_attachment ();
+            editing_msg_id = msg_id;
+            text_entry.text = current_text;
+            text_entry.placeholder_text = "Edit message…";
+            cancel_edit_button.visible = true;
+            attach_button.sensitive = false;
+            text_entry.grab_focus ();
+        }
+
+        private void cancel_edit () {
+            if (editing_msg_id == 0) return;
+            editing_msg_id = 0;
+            text_entry.text = "";
+            text_entry.placeholder_text = "Type a message…";
+            cancel_edit_button.visible = false;
+            attach_button.sensitive = true;
         }
 
         private void on_attach_clicked () {

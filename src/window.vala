@@ -177,6 +177,7 @@ namespace Dc {
 
             compose_bar = new ComposeBar ();
             compose_bar.send_message.connect (on_send_message);
+            compose_bar.edit_message.connect (on_edit_message);
             msg_box.append (compose_bar);
 
             content_stack.add_named (msg_box, "messages");
@@ -697,6 +698,36 @@ namespace Dc {
             vbox.margin_top = 4;
             vbox.margin_bottom = 4;
 
+            if (is_outgoing) {
+                /* Allow editing only if the message has text */
+                bool has_text = false;
+                for (uint i = 0; i < message_store.get_n_items (); i++) {
+                    var m = (Message) message_store.get_item (i);
+                    if (m.id == msg_id) {
+                        has_text = (m.text != null && m.text.strip ().length > 0);
+                        break;
+                    }
+                }
+                if (has_text) {
+                    var edit_btn = new Gtk.Button.with_label ("Edit");
+                    edit_btn.add_css_class ("flat");
+                    edit_btn.clicked.connect (() => {
+                        popover.popdown ();
+                        start_editing_message (msg_id);
+                    });
+                    vbox.append (edit_btn);
+                }
+
+                var del_all_btn = new Gtk.Button.with_label ("Delete for everyone");
+                del_all_btn.add_css_class ("flat");
+                del_all_btn.clicked.connect (() => {
+                    popover.popdown ();
+                    do_delete_message.begin (msg_id, true);
+                });
+                vbox.append (del_all_btn);
+            }
+
+
             string[] emojis = { "👍", "❤️", "😂", "😮", "😢", "👎" };
             var emoji_row1 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
             var emoji_row2 = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
@@ -723,16 +754,6 @@ namespace Dc {
                 do_delete_message.begin (msg_id, false);
             });
             vbox.append (del_me_btn);
-
-            if (is_outgoing) {
-                var del_all_btn = new Gtk.Button.with_label ("Delete for everyone");
-                del_all_btn.add_css_class ("flat");
-                del_all_btn.clicked.connect (() => {
-                    popover.popdown ();
-                    do_delete_message.begin (msg_id, true);
-                });
-                vbox.append (del_all_btn);
-            }
 
             popover.child = vbox;
             popover.set_parent (message_listbox);
@@ -780,6 +801,31 @@ namespace Dc {
                 }
             } catch (Error e) {
                 show_toast ("Delete failed: " + e.message);
+            }
+        }
+
+        private void start_editing_message (int msg_id) {
+            /* Find the message text from the backing store */
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var m = (Message) message_store.get_item (i);
+                if (m.id == msg_id) {
+                    compose_bar.begin_edit (msg_id, m.text ?? "");
+                    return;
+                }
+            }
+        }
+
+        private void on_edit_message (int msg_id, string new_text) {
+            do_edit_message.begin (msg_id, new_text);
+        }
+
+        private async void do_edit_message (int msg_id, string new_text) {
+            var rpc = ((Dc.Application) this.application).rpc;
+            try {
+                yield rpc.send_edit_request (rpc.account_id, msg_id, new_text);
+                yield update_message_row (msg_id);
+            } catch (Error e) {
+                show_toast ("Edit failed: " + e.message);
             }
         }
 
