@@ -188,6 +188,7 @@ namespace Dc {
             compose_bar.send_message.connect (on_send_message);
             compose_bar.edit_message.connect (on_edit_message);
             msg_box.append (compose_bar);
+            install_drop_target (msg_box);
 
             content_stack.add_named (msg_box, "messages");
             content_stack.visible_child_name = "empty";
@@ -503,23 +504,69 @@ namespace Dc {
         }
 
         /* ================================================================
+         *  Attachments (drag-and-drop)
+         * ================================================================ */
+
+        private void install_drop_target (Gtk.Widget target_widget) {
+            var drop = new Gtk.DropTarget (typeof (Gdk.FileList), Gdk.DragAction.COPY);
+            drop.accept.connect (() => {
+                return current_chat_id > 0 && compose_bar.can_accept_attachment ();
+            });
+            drop.enter.connect ((x, y) => {
+                target_widget.add_css_class ("chat-drop-active");
+                return Gdk.DragAction.COPY;
+            });
+            drop.leave.connect (() => {
+                target_widget.remove_css_class ("chat-drop-active");
+            });
+            drop.drop.connect ((value, x, y) => {
+                target_widget.remove_css_class ("chat-drop-active");
+                if (current_chat_id <= 0 || !compose_bar.can_accept_attachment ())
+                    return false;
+                var fl = (Gdk.FileList?) value.get_boxed ();
+                if (fl == null) return false;
+                var files = fl.get_files ();
+                if (files == null || files.data == null) return false;
+                attach_dropped_file.begin (files.data);
+                return true;
+            });
+            target_widget.add_controller (drop);
+        }
+
+        private async void attach_dropped_file (GLib.File file) {
+            try {
+                string? path = file.get_path ();
+                string name = file.get_basename () ?? "attachment";
+                if (path == null) {
+                    GLib.FileIOStream stream;
+                    var tmp = GLib.File.new_tmp ("deltachat-gnome-XXXXXX", out stream);
+                    stream.close ();
+                    yield file.copy_async (tmp, FileCopyFlags.OVERWRITE,
+                                           Priority.DEFAULT, null, null);
+                    path = tmp.get_path ();
+                }
+                compose_bar.set_pending_attachment (path, name);
+                compose_bar.grab_entry_focus ();
+            } catch (Error e) {
+                show_toast ("Attach failed: " + e.message);
+            }
+        }
+
+        /* ================================================================
          *  Sending
          * ================================================================ */
 
-        private void on_send_message (string text, string? file_path) {
+        private void on_send_message (string text, string? file_path, string? file_name) {
             if (current_chat_id <= 0) return;
-            do_send.begin (text, file_path);
+            do_send.begin (text, file_path, file_name);
         }
 
-        private async void do_send (string text, string? file_path) {
+        private async void do_send (string text, string? file_path, string? file_name) {
             var rpc = ((Dc.Application) this.application).rpc;
             try {
                 string? send_text = text.length > 0 ? text : null;
                 string? send_file = file_path;
-                string? send_name = null;
-                if (send_file != null) {
-                    send_name = Path.get_basename (send_file);
-                }
+                string? send_name = file_name;
 
                 int msg_id = yield rpc.send_msg (rpc.account_id, current_chat_id,
                                                   send_text, send_file, send_name);

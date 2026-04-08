@@ -74,6 +74,10 @@ namespace Dc {
             .message-image { border-radius: 12px; margin-top: 4px; }
             .compose-bar { border-top: 1px solid alpha(@view_fg_color, 0.12); }
             .compose-entry { min-height: 36px; border-radius: 18px; }
+            .chat-drop-active {
+                background-color: alpha(@accent_bg_color, 0.08);
+                box-shadow: inset 0 0 0 2px alpha(@accent_bg_color, 0.45);
+            }
             .chat-row { border-radius: 8px; padding: 4px; }
             .unread-badge {
                 background-color: @accent_bg_color;

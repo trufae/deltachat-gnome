@@ -6,9 +6,8 @@ namespace Dc {
      */
     public class ComposeBar : Gtk.Box {
 
-        public signal void send_message (string text, string? file_path);
+        public signal void send_message (string text, string? file_path, string? file_name);
         public signal void edit_message (int msg_id, string new_text);
-        public signal void attach_file ();
 
         private Gtk.Entry text_entry;
         private Gtk.Button send_button;
@@ -16,6 +15,7 @@ namespace Dc {
         private Gtk.Button cancel_attach_button;
         private Gtk.Button cancel_edit_button;
         private string? pending_file = null;
+        private string? pending_file_name = null;
         private int editing_msg_id = 0;
 
         public ComposeBar () {
@@ -55,12 +55,15 @@ namespace Dc {
             cancel_edit_button.clicked.connect (cancel_edit);
             append (cancel_edit_button);
 
-            /* Text entry */
+            /* Text entry with paste handler */
             text_entry = new Gtk.Entry ();
             text_entry.hexpand = true;
             text_entry.placeholder_text = "Type a message…";
             text_entry.add_css_class ("compose-entry");
             text_entry.activate.connect (on_send);
+            var paste_ctrl = new Gtk.EventControllerKey ();
+            paste_ctrl.key_pressed.connect (on_entry_key_pressed);
+            text_entry.add_controller (paste_ctrl);
             append (text_entry);
 
             /* Send button */
@@ -82,8 +85,21 @@ namespace Dc {
             clear_attachment ();
         }
 
+        public bool can_accept_attachment () {
+            return editing_msg_id == 0;
+        }
+
+        public void set_pending_attachment (string file_path, string? file_name = null) {
+            pending_file = file_path;
+            pending_file_name = file_name ?? Path.get_basename (file_path);
+            text_entry.text = "";
+            text_entry.placeholder_text = "📎 %s — Type a caption…".printf (pending_file_name);
+            cancel_attach_button.visible = true;
+        }
+
         private void clear_attachment () {
             pending_file = null;
+            pending_file_name = null;
             cancel_attach_button.visible = false;
             text_entry.placeholder_text = "Type a message…";
         }
@@ -97,8 +113,7 @@ namespace Dc {
                 return;
             }
             if (text.length == 0 && pending_file == null) return;
-
-            send_message (text, pending_file);
+            send_message (text, pending_file, pending_file_name);
             clear ();
         }
 
@@ -125,25 +140,70 @@ namespace Dc {
         private void on_attach_clicked () {
             var dialog = new Gtk.FileDialog ();
             dialog.title = "Select file to attach";
-
             var window = (Gtk.Window) get_root ();
             dialog.open.begin (window, null, (obj, res) => {
                 try {
                     var file = dialog.open.end (res);
                     if (file != null) {
-                        pending_file = file.get_path ();
-                        /* Show file name in entry as preview */
-                        string basename = Path.get_basename (pending_file);
-                        if (text_entry.text.strip ().length == 0) {
-                            text_entry.text = "";
-                        }
-                        text_entry.placeholder_text = "📎 %s — Type a caption…".printf (basename);
-                        cancel_attach_button.visible = true;
+                        var path = file.get_path ();
+                        if (path != null)
+                            set_pending_attachment (path, file.get_basename ());
                     }
                 } catch (Error e) {
-                    /* User cancelled */
                 }
             });
+        }
+
+        private bool on_entry_key_pressed (uint keyval, uint keycode,
+                                           Gdk.ModifierType state) {
+            if (!can_accept_attachment ()) return false;
+            bool ctrl_v = (state & Gdk.ModifierType.CONTROL_MASK) != 0
+                        && (keyval == Gdk.Key.v || keyval == Gdk.Key.V);
+            if (!ctrl_v && !((state & Gdk.ModifierType.SHIFT_MASK) != 0
+                             && keyval == Gdk.Key.Insert)) return false;
+
+            var clipboard = get_display ().get_clipboard ();
+            var formats = clipboard.get_formats ();
+            if (formats.contain_gtype (typeof (Gdk.FileList))) {
+                paste_file_list.begin (clipboard);
+                return true;
+            }
+            if (formats.contain_gtype (typeof (Gdk.Texture))) {
+                paste_texture.begin (clipboard);
+                return true;
+            }
+            return false;
+        }
+
+        private async void paste_file_list (Gdk.Clipboard clipboard) {
+            try {
+                var value = yield clipboard.read_value_async (typeof (Gdk.FileList),
+                                                              Priority.DEFAULT, null);
+                if (value == null) return;
+                var fl = (Gdk.FileList?) value.get_boxed ();
+                if (fl == null) return;
+                var files = fl.get_files ();
+                if (files != null && files.data != null) {
+                    var path = files.data.get_path ();
+                    if (path != null)
+                        set_pending_attachment (path, files.data.get_basename ());
+                }
+            } catch (Error e) {
+            }
+        }
+
+        private async void paste_texture (Gdk.Clipboard clipboard) {
+            try {
+                var texture = yield clipboard.read_texture_async (null);
+                if (texture == null) return;
+                GLib.FileIOStream stream;
+                var tmp = GLib.File.new_tmp ("deltachat-gnome-XXXXXX.png", out stream);
+                stream.close ();
+                string path = tmp.get_path ();
+                if (texture.save_to_png (path))
+                    set_pending_attachment (path, "pasted-image.png");
+            } catch (Error e) {
+            }
         }
     }
 }
