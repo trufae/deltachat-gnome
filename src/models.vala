@@ -32,6 +32,7 @@ namespace Dc {
         public int file_bytes { get; set; default = 0; }
         public string? view_type { get; set; default = null; }
         public bool is_info { get; set; default = false; }
+        public string? reactions { get; set; default = null; }
     }
 
     public class FoundInstallation : Object {

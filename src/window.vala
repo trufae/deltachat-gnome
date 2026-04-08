@@ -159,6 +159,19 @@ namespace Dc {
             message_listbox.add_css_class ("boxed-list-separate");
             message_listbox.set_header_func (null);
             message_listbox.row_activated.connect (on_message_row_activated);
+
+            /* Right-click context menu for reactions */
+            var msg_right_click = new Gtk.GestureClick ();
+            msg_right_click.button = 3;
+            msg_right_click.pressed.connect ((n, x, y) => {
+                var row = message_listbox.get_row_at_y ((int) y);
+                if (row == null) return;
+                var msg_row = row as MessageRow;
+                if (msg_row == null) return;
+                show_message_context_menu (msg_row.message_id, x, y);
+            });
+            message_listbox.add_controller (msg_right_click);
+
             message_scroll.child = message_listbox;
             msg_box.append (message_scroll);
 
@@ -668,6 +681,71 @@ namespace Dc {
             popover.set_parent (chat_listbox);
             popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
             popover.popup ();
+        }
+
+        /* ================================================================
+         *  Message Context Menu (Reactions)
+         * ================================================================ */
+
+        private void show_message_context_menu (int msg_id, double x, double y) {
+            var popover = new Gtk.Popover ();
+
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 2);
+            box.margin_start = 4;
+            box.margin_end = 4;
+            box.margin_top = 4;
+            box.margin_bottom = 4;
+
+            string[] emojis = { "👍", "❤️", "😂", "😮", "😢", "👎" };
+            foreach (string emoji in emojis) {
+                var btn = new Gtk.Button.with_label (emoji);
+                btn.add_css_class ("flat");
+                btn.clicked.connect (() => {
+                    popover.popdown ();
+                    do_send_reaction.begin (msg_id, emoji);
+                });
+                box.append (btn);
+            }
+
+            popover.child = box;
+            popover.set_parent (message_listbox);
+            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+            popover.popup ();
+        }
+
+        private async void do_send_reaction (int msg_id, string emoji) {
+            var rpc = ((Dc.Application) this.application).rpc;
+            try {
+                yield rpc.send_reaction (rpc.account_id, msg_id,
+                                          new string[] { emoji });
+                yield update_message_row (msg_id);
+            } catch (Error e) {
+                show_toast ("Reaction failed: " + e.message);
+            }
+        }
+
+        private async void update_message_row (int msg_id) {
+            var rpc = ((Dc.Application) this.application).rpc;
+            try {
+                var msg_obj = yield rpc.get_message (rpc.account_id, msg_id);
+                if (msg_obj == null) return;
+                var msg = RpcClient.parse_message (msg_obj, self_email);
+
+                int idx = 0;
+                Gtk.ListBoxRow? row;
+                while ((row = message_listbox.get_row_at_index (idx)) != null) {
+                    var mr = row as MessageRow;
+                    if (mr != null && mr.message_id == msg_id) {
+                        message_listbox.remove (row);
+                        var new_row = new MessageRow (msg);
+                        message_listbox.insert (new_row, idx);
+                        return;
+                    }
+                    idx++;
+                }
+            } catch (Error e) {
+                /* Reaction will appear on next message reload */
+            }
         }
 
         private async void show_chat_info (int chat_id) {

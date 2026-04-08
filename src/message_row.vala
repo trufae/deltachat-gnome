@@ -121,6 +121,30 @@ namespace Dc {
             time_lbl.halign = Gtk.Align.END;
             bubble.append (time_lbl);
 
+            /* Reactions */
+            if (msg.reactions != null && msg.reactions.length > 0) {
+                var reactions_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
+                reactions_box.add_css_class ("reaction-bar");
+                reactions_box.halign = Gtk.Align.START;
+
+                var parts = msg.reactions.split (",");
+                foreach (string part in parts) {
+                    var kv = part.split (":", 2);
+                    if (kv.length >= 2) {
+                        string emoji_str = kv[0];
+                        string count_str = kv[1];
+                        string label_text = count_str == "1"
+                            ? emoji_str
+                            : "%s %s".printf (emoji_str, count_str);
+                        var badge = new Gtk.Label (label_text);
+                        badge.add_css_class ("reaction-badge");
+                        reactions_box.append (badge);
+                    }
+                }
+
+                bubble.append (reactions_box);
+            }
+
             /* Alignment: outgoing right, incoming left */
             if (outgoing) {
                 var spacer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);

@@ -408,6 +408,19 @@ namespace Dc {
             return 0;
         }
 
+        public async void send_reaction (int acct_id, int msg_id,
+                                          string[] emojis) throws Error {
+            var b = new Json.Builder ();
+            b.begin_array ();
+            b.add_int_value (acct_id);
+            b.add_int_value (msg_id);
+            b.begin_array ();
+            foreach (string e in emojis) b.add_string_value (e);
+            b.end_array ();
+            b.end_array ();
+            yield call ("send_reaction", b.get_root ());
+        }
+
         public async void mark_seen_msgs (int acct_id, int[] msg_ids) throws Error {
             var b = new Json.Builder ();
             b.begin_array ();
@@ -563,6 +576,47 @@ namespace Dc {
             /* fromId == 1 means self in DeltaChat */
             if (obj.has_member ("fromId") && obj.get_int_member ("fromId") == 1) {
                 msg.is_outgoing = true;
+            }
+
+            /* Reactions */
+            if (obj.has_member ("reactions") && !obj.get_member ("reactions").is_null ()) {
+                var reactions_obj = obj.get_object_member ("reactions");
+                if (reactions_obj != null &&
+                    reactions_obj.has_member ("reactionsByContact") &&
+                    !reactions_obj.get_member ("reactionsByContact").is_null ()) {
+                    var by_contact = reactions_obj.get_object_member ("reactionsByContact");
+                    string[] r_emojis = {};
+                    int[] r_counts = {};
+
+                    var members = by_contact.get_members ();
+                    foreach (unowned string cid in members) {
+                        var node = by_contact.get_member (cid);
+                        if (node.get_node_type () != Json.NodeType.ARRAY) continue;
+                        var arr = node.get_array ();
+                        for (uint j = 0; j < arr.get_length (); j++) {
+                            string emoji = arr.get_string_element (j);
+                            int found = -1;
+                            for (int k = 0; k < r_emojis.length; k++) {
+                                if (r_emojis[k] == emoji) { found = k; break; }
+                            }
+                            if (found >= 0) {
+                                r_counts[found] = r_counts[found] + 1;
+                            } else {
+                                r_emojis += emoji;
+                                r_counts += 1;
+                            }
+                        }
+                    }
+
+                    if (r_emojis.length > 0) {
+                        var sb = new StringBuilder ();
+                        for (int k = 0; k < r_emojis.length; k++) {
+                            if (sb.len > 0) sb.append (",");
+                            sb.append_printf ("%s:%d", r_emojis[k], r_counts[k]);
+                        }
+                        msg.reactions = sb.str;
+                    }
+                }
             }
 
             return msg;
