@@ -69,6 +69,12 @@ namespace Dc {
             new_chat_btn.clicked.connect (on_new_chat);
             sidebar_header.pack_start (new_chat_btn);
 
+            /* New group button */
+            var new_group_btn = new Gtk.Button.from_icon_name ("system-users-symbolic");
+            new_group_btn.tooltip_text = "New group";
+            new_group_btn.clicked.connect (on_new_group);
+            sidebar_header.pack_start (new_group_btn);
+
             /* Refresh button */
             var refresh_btn = new Gtk.Button.from_icon_name ("view-refresh-symbolic");
             refresh_btn.tooltip_text = "Refresh chats";
@@ -580,6 +586,25 @@ namespace Dc {
             } catch (Error e) {
                 show_toast ("Failed to create chat: " + e.message);
             }
+        }
+
+        private void on_new_group () {
+            var rpc = ((Dc.Application) this.application).rpc;
+            if (rpc.account_id <= 0) return;
+
+            var dialog = new NewGroupDialog (rpc, rpc.account_id);
+            dialog.group_created.connect ((chat_id) => {
+                after_group_created.begin (chat_id);
+            });
+            dialog.present (this);
+        }
+
+        private async void after_group_created (int chat_id) {
+            yield load_chats ();
+            current_chat_id = chat_id;
+            content_stack.visible_child_name = "messages";
+            yield load_messages (chat_id);
+            show_toast ("Group created");
         }
 
         /* ================================================================

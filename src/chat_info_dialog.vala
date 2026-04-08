@@ -2,10 +2,20 @@ namespace Dc {
 
     public class ChatInfoDialog : Adw.Dialog {
 
+        private RpcClient rpc;
+        private int acct_id;
+        private int chat_id;
+        private bool is_group = false;
+        private Gtk.ListBox? members_list = null;
+        private Gtk.Box content;
+
         public ChatInfoDialog (RpcClient rpc, int acct_id, int chat_id) {
+            this.rpc = rpc;
+            this.acct_id = acct_id;
+            this.chat_id = chat_id;
             this.title = "Chat Info";
             this.content_width = 360;
-            this.content_height = 480;
+            this.content_height = 500;
 
             var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
 
@@ -13,7 +23,7 @@ namespace Dc {
             header.show_end_title_buttons = true;
             box.append (header);
 
-            var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+            content = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
             content.margin_start = 16;
             content.margin_end = 16;
             content.margin_top = 12;
@@ -33,11 +43,10 @@ namespace Dc {
 
             this.child = box;
 
-            load_info.begin (rpc, acct_id, chat_id, content, spinner);
+            load_info.begin (spinner);
         }
 
-        private async void load_info (RpcClient rpc, int acct_id, int chat_id,
-                                       Gtk.Box content, Gtk.Spinner spinner) {
+        private async void load_info (Gtk.Spinner spinner) {
             try {
                 var chat = yield rpc.get_full_chat_by_id (acct_id, chat_id);
                 if (chat == null) return;
@@ -54,6 +63,8 @@ namespace Dc {
                 bool encrypted = chat.has_member ("isEncrypted")
                     && chat.get_boolean_member ("isEncrypted");
 
+                is_group = chat_type == "Group" || chat_type == "Broadcast";
+
                 /* Avatar */
                 var avatar = new Adw.Avatar (80, name, true);
                 if (profile_image != null &&
@@ -64,6 +75,17 @@ namespace Dc {
                 }
                 avatar.halign = Gtk.Align.CENTER;
                 content.append (avatar);
+
+                /* Change avatar button for groups */
+                if (is_group) {
+                    var change_avatar_btn = new Gtk.Button.with_label ("Change Avatar");
+                    change_avatar_btn.halign = Gtk.Align.CENTER;
+                    change_avatar_btn.add_css_class ("flat");
+                    change_avatar_btn.clicked.connect (() => {
+                        pick_avatar.begin ();
+                    });
+                    content.append (change_avatar_btn);
+                }
 
                 /* Name */
                 var name_lbl = new Gtk.Label (name);
@@ -86,14 +108,28 @@ namespace Dc {
                 if (chat.has_member ("contactIds")) {
                     var ids = chat.get_array_member ("contactIds");
 
+                    var header_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+
                     var members_lbl = new Gtk.Label (
-                        ids.get_length () == 1 ? "Contact" : "Members (%u)".printf (ids.get_length ()));
+                        is_group ? "Members (%u)".printf (ids.get_length ()) : "Contact");
                     members_lbl.add_css_class ("heading");
                     members_lbl.halign = Gtk.Align.START;
-                    members_lbl.margin_top = 4;
-                    content.append (members_lbl);
+                    members_lbl.hexpand = true;
+                    header_box.append (members_lbl);
 
-                    var members_list = new Gtk.ListBox ();
+                    if (is_group) {
+                        var add_btn = new Gtk.Button.from_icon_name ("list-add-symbolic");
+                        add_btn.tooltip_text = "Add member";
+                        add_btn.add_css_class ("flat");
+                        add_btn.clicked.connect (() => {
+                            add_member_dialog.begin ();
+                        });
+                        header_box.append (add_btn);
+                    }
+
+                    content.append (header_box);
+
+                    members_list = new Gtk.ListBox ();
                     members_list.selection_mode = Gtk.SelectionMode.NONE;
                     members_list.add_css_class ("boxed-list");
 
@@ -102,7 +138,7 @@ namespace Dc {
                         var contact = yield rpc.get_contact (acct_id, cid);
                         if (contact == null) continue;
 
-                        var row = build_contact_row (contact);
+                        var row = build_contact_row (contact, cid);
                         members_list.append (row);
                     }
 
@@ -118,7 +154,7 @@ namespace Dc {
             }
         }
 
-        private Adw.ActionRow build_contact_row (Json.Object contact) {
+        private Adw.ActionRow build_contact_row (Json.Object contact, int contact_id) {
             string display = contact.has_member ("displayName")
                 && !contact.get_member ("displayName").is_null ()
                 ? contact.get_string_member ("displayName") : "";
@@ -146,7 +182,105 @@ namespace Dc {
             }
             row.add_prefix (avatar);
 
+            /* Remove button for groups (not self, contact_id=1 is self) */
+            if (is_group && contact_id != 1) {
+                var remove_btn = new Gtk.Button.from_icon_name ("user-trash-symbolic");
+                remove_btn.valign = Gtk.Align.CENTER;
+                remove_btn.add_css_class ("flat");
+                remove_btn.add_css_class ("error");
+                remove_btn.tooltip_text = "Remove from group";
+                remove_btn.clicked.connect (() => {
+                    remove_member.begin (contact_id, row);
+                });
+                row.add_suffix (remove_btn);
+            }
+
             return row;
+        }
+
+        private async void remove_member (int contact_id, Adw.ActionRow row) {
+            try {
+                yield rpc.remove_contact_from_chat (acct_id, chat_id, contact_id);
+                members_list.remove (row);
+            } catch (Error e) {
+                /* show inline error */
+                row.subtitle = "Remove failed: " + e.message;
+            }
+        }
+
+        private async void add_member_dialog () {
+            var dialog = new Adw.AlertDialog (
+                "Add Member",
+                "Enter the email address of the member to add."
+            );
+
+            var entry = new Gtk.Entry ();
+            entry.placeholder_text = "user@example.com";
+            entry.input_purpose = Gtk.InputPurpose.EMAIL;
+            dialog.extra_child = entry;
+
+            dialog.add_response ("cancel", "Cancel");
+            dialog.add_response ("add", "Add");
+            dialog.set_response_appearance ("add", Adw.ResponseAppearance.SUGGESTED);
+            dialog.default_response = "add";
+
+            entry.activate.connect (() => {
+                dialog.response ("add");
+            });
+
+            dialog.response.connect ((resp) => {
+                if (resp == "add") {
+                    string email = entry.text.strip ();
+                    if (email.length > 0 && email.contains ("@")) {
+                        do_add_member.begin (email);
+                    }
+                }
+            });
+
+            dialog.present (this);
+        }
+
+        private async void do_add_member (string email) {
+            try {
+                int contact_id = yield rpc.lookup_contact (acct_id, email);
+                if (contact_id == 0) {
+                    contact_id = yield rpc.create_contact (acct_id, email);
+                }
+                yield rpc.add_contact_to_chat (acct_id, chat_id, contact_id);
+
+                /* Refresh the member list */
+                var contact = yield rpc.get_contact (acct_id, contact_id);
+                if (contact != null && members_list != null) {
+                    var row = build_contact_row (contact, contact_id);
+                    members_list.append (row);
+                }
+            } catch (Error e) {
+                var err_dialog = new Adw.AlertDialog ("Error", e.message);
+                err_dialog.add_response ("ok", "OK");
+                err_dialog.present (this);
+            }
+        }
+
+        private async void pick_avatar () {
+            var chooser = new Gtk.FileDialog ();
+            chooser.title = "Select Avatar Image";
+
+            var filter = new Gtk.FileFilter ();
+            filter.add_mime_type ("image/*");
+            filter.name = "Images";
+            var filters = new ListStore (typeof (Gtk.FileFilter));
+            filters.append (filter);
+            chooser.filters = filters;
+
+            try {
+                var file = yield chooser.open ((Gtk.Window) this.get_root (), null);
+                if (file != null) {
+                    string path = file.get_path ();
+                    yield rpc.set_chat_profile_image (acct_id, chat_id, path);
+                }
+            } catch (Error e) {
+                /* cancelled or error */
+            }
         }
     }
 }

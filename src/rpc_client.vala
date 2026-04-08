@@ -220,6 +220,16 @@ namespace Dc {
             return b.get_root ();
         }
 
+        public static Json.Node build_params_int3 (int v1, int v2, int v3) {
+            var b = new Json.Builder ();
+            b.begin_array ();
+            b.add_int_value (v1);
+            b.add_int_value (v2);
+            b.add_int_value (v3);
+            b.end_array ();
+            return b.get_root ();
+        }
+
         public static Json.Node build_params_int_str (int v, string? s) {
             var b = new Json.Builder ();
             b.begin_array ();
@@ -484,6 +494,27 @@ namespace Dc {
             var result = yield call ("get_contact", build_params_int2 (acct_id, contact_id));
             if (result == null) return null;
             return result.get_object ();
+        }
+
+        public async void add_contact_to_chat (int acct_id, int chat_id,
+                                                 int contact_id) throws Error {
+            yield call ("add_contact_to_chat", build_params_int3 (acct_id, chat_id, contact_id));
+        }
+
+        public async void remove_contact_from_chat (int acct_id, int chat_id,
+                                                      int contact_id) throws Error {
+            yield call ("remove_contact_from_chat", build_params_int3 (acct_id, chat_id, contact_id));
+        }
+
+        public async void set_chat_profile_image (int acct_id, int chat_id,
+                                                    string image_path) throws Error {
+            var b = new Json.Builder ();
+            b.begin_array ();
+            b.add_int_value (acct_id);
+            b.add_int_value (chat_id);
+            b.add_string_value (image_path);
+            b.end_array ();
+            yield call ("set_chat_profile_image", b.get_root ());
         }
 
         /* ---- Parsing helpers ---- */
