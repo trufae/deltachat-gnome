@@ -33,6 +33,23 @@ namespace Dc {
         protected override void startup () {
             base.startup ();
             load_css ();
+            register_icons ();
+        }
+
+        private void register_icons () {
+            var theme = Gtk.IconTheme.get_for_display (Gdk.Display.get_default ());
+            /* Support running uninstalled: add the project data/icons dir */
+            try {
+                var exe_path = FileUtils.read_link ("/proc/self/exe");
+                var exe_dir = File.new_for_path (exe_path).get_parent ();
+                /* exe in builddir/ → icons in ../data/icons */
+                var project_icons = exe_dir.get_parent ().get_child ("data").get_child ("icons");
+                if (project_icons.query_exists ()) {
+                    theme.add_search_path (project_icons.get_path ());
+                }
+            } catch (FileError e) {
+                /* not on Linux or unreadable — fall through to installed path */
+            }
         }
 
         private void load_css () {
