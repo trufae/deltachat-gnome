@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://delta.chat/assets/logos/delta-chat.svg" width="80" alt="Delta Chat logo"/>
+  <img src="delta-gnome.png" width="80" alt="Delta Chat GNOME logo"/>
 </p>
 
 <h1 align="center">Delta Chat GNOME</h1>
