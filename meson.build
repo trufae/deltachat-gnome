@@ -26,6 +26,7 @@ sources = files(
   'src/contact_picker_dialog.vala',
   'src/new_group_dialog.vala',
   'src/settings_dialog.vala',
+  'src/profile_dialog.vala',
 )
 
 executable('deltachat-gnome',

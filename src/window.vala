@@ -30,6 +30,9 @@ namespace Dc {
         private Adw.StatusPage empty_status;
         private Gtk.Stack content_stack;
 
+        /* Profile avatar */
+        private Adw.Avatar profile_avatar;
+
         /* State */
         private int current_chat_id = 0;
         private string? self_email = null;
@@ -95,17 +98,15 @@ namespace Dc {
             });
             title_widget.add_controller (title_click);
 
-            /* New chat button in header */
-            var new_chat_btn = new Gtk.Button.from_icon_name ("list-add-symbolic");
-            new_chat_btn.tooltip_text = "New chat";
-            new_chat_btn.clicked.connect (on_new_chat);
-            sidebar_header.pack_start (new_chat_btn);
-
-            /* New group button */
-            var new_group_btn = new Gtk.Button.from_icon_name ("system-users-symbolic");
-            new_group_btn.tooltip_text = "New group";
-            new_group_btn.clicked.connect (on_new_group);
-            sidebar_header.pack_start (new_group_btn);
+            /* Profile avatar button in header */
+            profile_avatar = new Adw.Avatar (24, "", true);
+            var avatar_button = new Gtk.Button ();
+            avatar_button.child = profile_avatar;
+            avatar_button.add_css_class ("flat");
+            avatar_button.add_css_class ("circular");
+            avatar_button.tooltip_text = "My profile";
+            avatar_button.clicked.connect (on_show_profile);
+            sidebar_header.pack_start (avatar_button);
 
 
             sidebar_box.append (sidebar_header);
@@ -409,6 +410,7 @@ namespace Dc {
                     self_email = null;
                 }
                 yield load_chats ();
+                yield load_profile_avatar ();
                 start_listener.begin ();
 
                 var title = (Adw.WindowTitle) sidebar_header.title_widget;
@@ -1052,6 +1054,42 @@ namespace Dc {
          *  Actions
          * ================================================================ */
 
+        private void on_show_profile () {
+            var rpc = ((Dc.Application) this.application).rpc;
+            if (rpc.account_id <= 0) return;
+
+            var dialog = new ProfileDialog (rpc, rpc.account_id);
+            dialog.profile_updated.connect (() => {
+                load_profile_avatar.begin ();
+            });
+            dialog.present (this);
+        }
+
+        private async void load_profile_avatar () {
+            var rpc = ((Dc.Application) this.application).rpc;
+            if (rpc.account_id <= 0) return;
+
+            try {
+                string? name = yield rpc.get_config (rpc.account_id, "displayname");
+                string? avatar = yield rpc.get_config (rpc.account_id, "selfavatar");
+
+                profile_avatar.text = name ?? "";
+                if (avatar != null && avatar.length > 0 &&
+                    FileUtils.test (avatar, FileTest.EXISTS)) {
+                    try {
+                        var texture = Gdk.Texture.from_filename (avatar);
+                        profile_avatar.custom_image = texture;
+                    } catch (Error e) {
+                        profile_avatar.custom_image = null;
+                    }
+                } else {
+                    profile_avatar.custom_image = null;
+                }
+            } catch (Error e) {
+                /* ignore */
+            }
+        }
+
         private void on_new_chat () {
             var rpc = ((Dc.Application) this.application).rpc;
             if (rpc.account_id <= 0) return;
@@ -1636,6 +1674,24 @@ namespace Dc {
             vbox.margin_top = 4;
             vbox.margin_bottom = 4;
 
+            var new_chat_btn = new Gtk.Button.with_label ("New Chat");
+            new_chat_btn.add_css_class ("flat");
+            new_chat_btn.clicked.connect (() => {
+                popover.popdown ();
+                on_new_chat ();
+            });
+            vbox.append (new_chat_btn);
+
+            var new_group_btn = new Gtk.Button.with_label ("New Group");
+            new_group_btn.add_css_class ("flat");
+            new_group_btn.clicked.connect (() => {
+                popover.popdown ();
+                on_new_group ();
+            });
+            vbox.append (new_group_btn);
+
+            vbox.append (new Gtk.Separator (Gtk.Orientation.HORIZONTAL));
+
             var refresh_btn = new Gtk.Button.with_label ("Refresh");
             refresh_btn.add_css_class ("flat");
             refresh_btn.clicked.connect (() => {
@@ -1716,6 +1772,7 @@ namespace Dc {
             current_chat_id = 0;
             content_stack.visible_child_name = "empty";
             yield load_chats ();
+            yield load_profile_avatar ();
             if (!listening) {
                 start_listener.begin ();
             }
