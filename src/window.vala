@@ -46,6 +46,11 @@ namespace Dc {
         private Gtk.Box pinned_bar_content;
         private int[] pinned_msg_ids = {};
 
+        /* Fullscreen image viewer */
+        private Gtk.Overlay image_viewer_overlay;
+        private Gtk.Picture image_viewer_picture;
+        private Gtk.Box image_viewer_box;
+
         public Window (Dc.Application app) {
             Object (
                 application: app,
@@ -318,7 +323,37 @@ namespace Dc {
 
             toast_overlay = new Adw.ToastOverlay ();
             toast_overlay.child = split_view;
-            this.content = toast_overlay;
+
+            /* Fullscreen image viewer overlay */
+            image_viewer_picture = new Gtk.Picture ();
+            image_viewer_picture.content_fit = Gtk.ContentFit.CONTAIN;
+            image_viewer_picture.hexpand = true;
+            image_viewer_picture.vexpand = true;
+
+            image_viewer_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            image_viewer_box.add_css_class ("image-viewer-overlay");
+            image_viewer_box.hexpand = true;
+            image_viewer_box.vexpand = true;
+            image_viewer_box.append (image_viewer_picture);
+            image_viewer_box.visible = false;
+
+            var viewer_click = new Gtk.GestureClick ();
+            viewer_click.button = 1;
+            viewer_click.pressed.connect (() => { hide_image_viewer (); });
+            image_viewer_box.add_controller (viewer_click);
+
+            var viewer_right_click = new Gtk.GestureClick ();
+            viewer_right_click.button = 3;
+            viewer_right_click.pressed.connect ((n, x, y) => {
+                show_image_viewer_menu (x, y);
+            });
+            image_viewer_box.add_controller (viewer_right_click);
+
+            image_viewer_overlay = new Gtk.Overlay ();
+            image_viewer_overlay.child = toast_overlay;
+            image_viewer_overlay.add_overlay (image_viewer_box);
+
+            this.content = image_viewer_overlay;
 
             /* Global keyboard shortcuts */
             var key_ctrl = new Gtk.EventControllerKey ();
@@ -817,7 +852,11 @@ namespace Dc {
                 show_toast ("File not available");
                 return;
             }
-            save_attachment.begin (msg_row.file_path, msg_row.file_name);
+            if (msg_row.is_image) {
+                show_image_viewer (msg_row.file_path);
+            } else {
+                save_attachment.begin (msg_row.file_path, msg_row.file_name);
+            }
         }
 
         private async void save_attachment (string src_path, string? name) {
@@ -834,6 +873,55 @@ namespace Dc {
                 if (e is IOError.CANCELLED) return;
                 show_toast ("Save failed: " + e.message);
             }
+        }
+
+        /* ================================================================
+         *  Fullscreen image viewer
+         * ================================================================ */
+
+        private string? image_viewer_path = null;
+
+        private void show_image_viewer (string path) {
+            try {
+                var texture = Gdk.Texture.from_filename (path);
+                image_viewer_picture.paintable = texture;
+                image_viewer_path = path;
+                image_viewer_box.visible = true;
+                image_viewer_box.grab_focus ();
+            } catch (Error e) {
+                show_toast ("Cannot open image: " + e.message);
+            }
+        }
+
+        private void hide_image_viewer () {
+            image_viewer_box.visible = false;
+            image_viewer_picture.paintable = null;
+            image_viewer_path = null;
+        }
+
+        private void show_image_viewer_menu (double x, double y) {
+            if (image_viewer_path == null) return;
+            string path = image_viewer_path;
+
+            var popover = new Gtk.Popover ();
+            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 4);
+            vbox.margin_start = 4;
+            vbox.margin_end = 4;
+            vbox.margin_top = 4;
+            vbox.margin_bottom = 4;
+
+            var save_btn = new Gtk.Button.with_label ("Save image");
+            save_btn.add_css_class ("flat");
+            save_btn.clicked.connect (() => {
+                popover.popdown ();
+                save_attachment.begin (path, Path.get_basename (path));
+            });
+            vbox.append (save_btn);
+
+            popover.child = vbox;
+            popover.set_parent (image_viewer_box);
+            popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
+            popover.popup ();
         }
 
         /* ================================================================
@@ -1110,6 +1198,23 @@ namespace Dc {
                 toggle_message_pin (msg_id);
             });
             vbox.append (pin_btn);
+
+            /* Save file (for messages with attachments) */
+            for (uint i = 0; i < message_store.get_n_items (); i++) {
+                var m = (Message) message_store.get_item (i);
+                if (m.id == msg_id && m.file_path != null && m.file_path.length > 0) {
+                    string fpath = m.file_path;
+                    string? fname = m.file_name;
+                    var save_btn = new Gtk.Button.with_label ("Save file");
+                    save_btn.add_css_class ("flat");
+                    save_btn.clicked.connect (() => {
+                        popover.popdown ();
+                        save_attachment.begin (fpath, fname);
+                    });
+                    vbox.append (save_btn);
+                    break;
+                }
+            }
 
             if (is_outgoing) {
                 /* Allow editing only if the message has text */
@@ -1538,7 +1643,7 @@ namespace Dc {
             });
             vbox.append (settings_btn);
 
-            var shortcuts_btn = new Gtk.Button.with_label ("Keyboard Shortcuts");
+            var shortcuts_btn = new Gtk.Button.with_label ("Shortcuts");
             shortcuts_btn.add_css_class ("flat");
             shortcuts_btn.clicked.connect (() => {
                 popover.popdown ();
@@ -1613,6 +1718,12 @@ namespace Dc {
 
         private bool on_window_key_pressed (uint keyval, uint keycode,
                                             Gdk.ModifierType state) {
+            /* Close fullscreen image viewer on any key */
+            if (image_viewer_box.visible) {
+                hide_image_viewer ();
+                return true;
+            }
+
             /* Escape: close message search if active */
             if (keyval == Gdk.Key.Escape) {
                 if (message_search_revealer.reveal_child) {
@@ -1797,7 +1908,7 @@ namespace Dc {
 
         private void show_keyboard_shortcuts_dialog () {
             var dialog = new Adw.Dialog ();
-            dialog.title = "Keyboard Shortcuts";
+            dialog.title = "Shortcuts";
             dialog.content_width = 400;
             dialog.content_height = 380;
 

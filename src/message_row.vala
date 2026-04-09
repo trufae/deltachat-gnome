@@ -13,6 +13,7 @@ namespace Dc {
         public string? file_name { get; private set; }
         public string? message_text { get; private set; }
         public int quote_msg_id { get; private set; }
+        public bool is_image { get; private set; }
 
         public signal void quote_clicked (int quoted_msg_id);
 
@@ -117,6 +118,7 @@ namespace Dc {
                 if (msg.file_path != null &&
                     FileUtils.test (msg.file_path, FileTest.EXISTS) &&
                     is_image_file (msg)) {
+                    this.is_image = true;
                     try {
                         var pixbuf = new Gdk.Pixbuf.from_file_at_scale (
                             msg.file_path, 400, 400, true);
