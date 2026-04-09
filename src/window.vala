@@ -161,6 +161,12 @@ namespace Dc {
             /* Show sidebar on mobile */
             content_header.show_back_button = true;
 
+            /* Search/filter button on the right side */
+            var search_btn = new Gtk.Button.from_icon_name ("edit-find-symbolic");
+            search_btn.tooltip_text = "Search in conversation (Ctrl+F)";
+            search_btn.clicked.connect (() => { toggle_message_search (); });
+            content_header.pack_end (search_btn);
+
             content_box.append (content_header);
 
             /* Stack: empty status vs message view */
