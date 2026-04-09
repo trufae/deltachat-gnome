@@ -34,6 +34,7 @@ namespace Dc {
         private bool listening = false;
         private bool stick_to_bottom = true;
         public int double_click_action { get; set; default = 0; }
+        public bool markdown_rendering { get; set; default = false; }
 
         public Window (Dc.Application app) {
             Object (
@@ -1621,11 +1622,27 @@ namespace Dc {
 
         public void save_double_click_action (int action) {
             double_click_action = action;
+            save_setting_to_file ((kf) => {
+                kf.set_integer ("General", "double_click_action", action);
+            });
+        }
+
+        public void save_markdown_rendering (bool enabled) {
+            markdown_rendering = enabled;
+            Markdown.enabled = enabled;
+            save_setting_to_file ((kf) => {
+                kf.set_boolean ("General", "markdown_rendering", enabled);
+            });
+        }
+
+        private delegate void SettingWriter (KeyFile kf);
+
+        private void save_setting_to_file (SettingWriter writer) {
             var kf = new KeyFile ();
             try {
                 kf.load_from_file (get_config_path (), KeyFileFlags.NONE);
             } catch (Error e) { /* file may not exist yet */ }
-            kf.set_integer ("General", "double_click_action", action);
+            writer (kf);
             try {
                 var dir = Path.get_dirname (get_config_path ());
                 DirUtils.create_with_parents (dir, 0755);
@@ -1639,11 +1656,25 @@ namespace Dc {
             var kf = new KeyFile ();
             try {
                 kf.load_from_file (get_config_path (), KeyFileFlags.NONE);
+            } catch (Error e) {
+                double_click_action = 0;
+                markdown_rendering = false;
+                Markdown.enabled = false;
+                return;
+            }
+            try {
                 double_click_action = kf.get_integer (
                     "General", "double_click_action");
             } catch (Error e) {
-                double_click_action = 0; /* reply */
+                double_click_action = 0;
             }
+            try {
+                markdown_rendering = kf.get_boolean (
+                    "General", "markdown_rendering");
+            } catch (Error e) {
+                markdown_rendering = false;
+            }
+            Markdown.enabled = markdown_rendering;
         }
 
         /* ================================================================

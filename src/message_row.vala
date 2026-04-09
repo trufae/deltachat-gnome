@@ -148,7 +148,7 @@ namespace Dc {
             /* Message text */
             if (msg.text != null && msg.text.length > 0) {
                 var text = new Gtk.Label (null);
-                text.set_markup (linkify (msg.text));
+                text.set_markup (Markdown.format (msg.text));
                 text.wrap = true;
                 text.wrap_mode = Pango.WrapMode.WORD_CHAR;
                 text.halign = Gtk.Align.START;
@@ -258,22 +258,5 @@ namespace Dc {
             return dt.format ("%H:%M");
         }
 
-        private static string linkify (string input) {
-            var escaped = Markup.escape_text (input);
-            try {
-                var re = new Regex ("(https?://[^\\s<>\"]+)");
-                return re.replace_eval (escaped, -1, 0, 0, (mi, sb) => {
-                    var url = mi.fetch (0);
-                    sb.append ("<a href=\"");
-                    sb.append (url);
-                    sb.append ("\">");
-                    sb.append (url);
-                    sb.append ("</a>");
-                    return false;
-                });
-            } catch (RegexError e) {
-                return escaped;
-            }
-        }
     }
 }

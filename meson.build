@@ -19,6 +19,7 @@ sources = files(
   'src/account_finder.vala',
   'src/models.vala',
   'src/chat_row.vala',
+  'src/markdown.vala',
   'src/message_row.vala',
   'src/compose_bar.vala',
   'src/chat_info_dialog.vala',

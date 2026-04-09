@@ -79,6 +79,21 @@ namespace Dc {
             dblclick_row.activatable_widget = dblclick_combo;
 
             behavior_list.append (dblclick_row);
+
+            var md_row = new Adw.ActionRow ();
+            md_row.title = "Markdown rendering";
+            md_row.subtitle = "Format bold, italic, code and headings";
+
+            var md_switch = new Gtk.Switch ();
+            md_switch.active = Markdown.enabled;
+            md_switch.valign = Gtk.Align.CENTER;
+            md_switch.notify["active"].connect (() => {
+                app_window.save_markdown_rendering (md_switch.active);
+            });
+            md_row.add_suffix (md_switch);
+            md_row.activatable_widget = md_switch;
+
+            behavior_list.append (md_row);
             content.append (behavior_list);
 
             var scroll = new Gtk.ScrolledWindow ();
