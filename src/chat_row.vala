@@ -63,6 +63,13 @@ namespace Dc {
             name_label.xalign = 0;
             top.append (name_label);
 
+            if (entry.is_pinned) {
+                var pin_label = new Gtk.Label ("📌");
+                pin_label.add_css_class ("dim-label");
+                pin_label.add_css_class ("caption");
+                top.append (pin_label);
+            }
+
             time_label = new Gtk.Label (format_time (entry.timestamp));
             time_label.add_css_class ("dim-label");
             time_label.add_css_class ("caption");

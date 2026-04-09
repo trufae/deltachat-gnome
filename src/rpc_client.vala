@@ -538,6 +538,17 @@ namespace Dc {
             yield call ("delete_chat", build_params_int2 (acct_id, chat_id));
         }
 
+        public async void set_chat_visibility (int acct_id, int chat_id,
+                                                string visibility) throws Error {
+            var b = new Json.Builder ();
+            b.begin_array ();
+            b.add_int_value (acct_id);
+            b.add_int_value (chat_id);
+            b.add_string_value (visibility);
+            b.end_array ();
+            yield call ("set_chat_visibility", b.get_root ());
+        }
+
         public async void delete_messages (int acct_id, int[] msg_ids) throws Error {
             var b = new Json.Builder ();
             b.begin_array ();

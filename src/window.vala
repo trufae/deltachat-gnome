@@ -885,11 +885,27 @@ namespace Dc {
          * ================================================================ */
 
         private void show_chat_context_menu (int chat_id, double x, double y) {
+            /* Look up pinned state from chat_store */
+            bool is_pinned = false;
+            for (uint i = 0; i < chat_store.get_n_items (); i++) {
+                var entry = (ChatEntry) chat_store.get_item (i);
+                if (entry.id == chat_id) {
+                    is_pinned = entry.is_pinned;
+                    break;
+                }
+            }
+
             var menu = new GLib.Menu ();
+            menu.append (is_pinned ? "Unpin" : "Pin", "win.chat-pin");
             menu.append ("Chat Info", "win.chat-info");
             menu.append ("Delete for Me", "win.chat-delete");
 
             /* Set up actions with the chat_id */
+            var pin_action = new SimpleAction ("chat-pin", null);
+            pin_action.activate.connect (() => {
+                toggle_chat_pin.begin (chat_id, is_pinned);
+            });
+
             var info_action = new SimpleAction ("chat-info", null);
             info_action.activate.connect (() => {
                 show_chat_info.begin (chat_id);
@@ -902,6 +918,7 @@ namespace Dc {
 
             /* Replace actions each time (context changes) */
             var group = new SimpleActionGroup ();
+            group.add_action (pin_action);
             group.add_action (info_action);
             group.add_action (delete_action);
             this.insert_action_group ("win", group);
@@ -910,6 +927,17 @@ namespace Dc {
             popover.set_parent (chat_listbox);
             popover.set_pointing_to ({ (int) x, (int) y, 1, 1 });
             popover.popup ();
+        }
+
+        private async void toggle_chat_pin (int chat_id, bool currently_pinned) {
+            var rpc = ((Dc.Application) this.application).rpc;
+            try {
+                string visibility = currently_pinned ? "Normal" : "Pinned";
+                yield rpc.set_chat_visibility (rpc.account_id, chat_id, visibility);
+                yield load_chats ();
+            } catch (Error e) {
+                show_toast ("Failed to update pin: " + e.message);
+            }
         }
 
         /* ================================================================
