@@ -20,6 +20,7 @@ namespace Dc {
         private GLib.ListStore message_store;
         private ComposeBar compose_bar;
         private Gtk.Button scroll_down_btn;
+        private Gtk.Button load_more_btn;
 
         /* Message search */
         private Gtk.Revealer message_search_revealer;
@@ -34,6 +35,9 @@ namespace Dc {
         private string? self_email = null;
         private bool listening = false;
         private bool stick_to_bottom = true;
+        private Json.Array? all_msg_ids = null;
+        private uint loaded_start_index = 0;
+        private bool loading_more = false;
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
 
@@ -190,6 +194,9 @@ namespace Dc {
             message_scroll.vadjustment.notify["value"].connect (() => {
                 stick_to_bottom = is_near_bottom ();
                 scroll_down_btn.visible = !stick_to_bottom;
+                if (is_near_top () && !loading_more && loaded_start_index > 0) {
+                    load_earlier_messages.begin ();
+                }
             });
 
             message_listbox = new Gtk.ListBox ();
@@ -232,7 +239,19 @@ namespace Dc {
             });
             message_listbox.add_controller (msg_dbl_click);
 
-            message_scroll.child = message_listbox;
+            load_more_btn = new Gtk.Button.with_label ("Load earlier messages\u2026");
+            load_more_btn.add_css_class ("dim-label");
+            load_more_btn.add_css_class ("flat");
+            load_more_btn.halign = Gtk.Align.CENTER;
+            load_more_btn.margin_top = 8;
+            load_more_btn.margin_bottom = 4;
+            load_more_btn.visible = false;
+            load_more_btn.clicked.connect (() => { load_earlier_messages.begin (); });
+
+            var message_vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            message_vbox.append (load_more_btn);
+            message_vbox.append (message_listbox);
+            message_scroll.child = message_vbox;
 
             /* Message search bar (toggled by Ctrl+F) */
             message_search_entry = new Gtk.SearchEntry ();
@@ -540,17 +559,16 @@ namespace Dc {
             if (rpc.account_id <= 0) return;
 
             try {
-                var msg_ids = yield rpc.get_message_ids (rpc.account_id, chat_id);
-                if (msg_ids == null) return;
+                all_msg_ids = yield rpc.get_message_ids (rpc.account_id, chat_id);
+                if (all_msg_ids == null) return;
 
-                /* Fetch all messages first, then populate in one
-                   synchronous pass to avoid listener interference. */
-                uint start = msg_ids.get_length () > 100
-                    ? msg_ids.get_length () - 100 : 0;
+                /* Only fetch the last N messages for fast initial load. */
+                loaded_start_index = all_msg_ids.get_length () > 100
+                    ? all_msg_ids.get_length () - 100 : 0;
 
                 var messages = new GLib.GenericArray<Message> ();
-                for (uint i = start; i < msg_ids.get_length (); i++) {
-                    int msg_id = (int) msg_ids.get_int_element (i);
+                for (uint i = loaded_start_index; i < all_msg_ids.get_length (); i++) {
+                    int msg_id = (int) all_msg_ids.get_int_element (i);
                     var msg_obj = yield rpc.get_message (rpc.account_id, msg_id);
                     if (msg_obj == null) continue;
                     messages.add (RpcClient.parse_message (msg_obj, self_email));
@@ -577,6 +595,8 @@ namespace Dc {
                     message_listbox.append (create_message_row (msg));
                 }
 
+                load_more_btn.visible = (loaded_start_index > 0);
+
                 /* Defer scroll until GTK has laid out the new rows,
                    otherwise the adjustment upper is stale. */
                 stick_to_bottom = true;
@@ -596,6 +616,63 @@ namespace Dc {
             var adj = message_scroll.vadjustment;
             if (adj.upper <= adj.page_size) return true;
             return (adj.upper - adj.value - adj.page_size) < 80;
+        }
+
+        private bool is_near_top () {
+            var adj = message_scroll.vadjustment;
+            return adj.value < 80;
+        }
+
+        private async void load_earlier_messages () {
+            if (loading_more || all_msg_ids == null || loaded_start_index == 0) return;
+            loading_more = true;
+
+            var rpc = ((Dc.Application) this.application).rpc;
+            int chat_id = current_chat_id;
+
+            uint batch = 100;
+            uint new_start = loaded_start_index > batch
+                ? loaded_start_index - batch : 0;
+
+            try {
+                var messages = new GLib.GenericArray<Message> ();
+                for (uint i = new_start; i < loaded_start_index; i++) {
+                    int msg_id = (int) all_msg_ids.get_int_element (i);
+                    var msg_obj = yield rpc.get_message (rpc.account_id, msg_id);
+                    if (msg_obj == null) continue;
+                    messages.add (RpcClient.parse_message (msg_obj, self_email));
+                }
+
+                if (chat_id != current_chat_id) { loading_more = false; return; }
+
+                /* Record scroll state before prepending. */
+                var adj = message_scroll.vadjustment;
+                double old_upper = adj.upper;
+                double old_value = adj.value;
+
+                /* Prepend older messages in chronological order. */
+                for (uint i = 0; i < messages.length; i++) {
+                    var msg = messages[i];
+                    msg.is_pinned = is_msg_pinned (msg.id);
+                    message_store.insert ((int) i, msg);
+                    message_listbox.insert (create_message_row (msg), (int) i);
+                }
+
+                loaded_start_index = new_start;
+                load_more_btn.visible = (loaded_start_index > 0);
+
+                /* Restore scroll position so the user sees the same
+                   content after older messages are prepended above. */
+                Idle.add (() => {
+                    var a = message_scroll.vadjustment;
+                    a.value = old_value + (a.upper - old_upper);
+                    loading_more = false;
+                    return Source.REMOVE;
+                });
+            } catch (Error e) {
+                loading_more = false;
+                show_toast ("Failed to load earlier messages: " + e.message);
+            }
         }
 
         private void maybe_autoscroll () {
