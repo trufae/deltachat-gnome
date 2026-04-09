@@ -74,7 +74,7 @@ namespace Dc {
                 border-top-left-radius: 4px;
             }
             .message-bubble.outgoing {
-                background-color: @accent_bg_color;
+                background-color: mix(@accent_bg_color, white, 0.5);
                 color: @accent_fg_color;
                 border-bottom-right-radius: 4px;
             }
