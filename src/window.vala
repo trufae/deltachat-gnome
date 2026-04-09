@@ -36,6 +36,11 @@ namespace Dc {
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
 
+        /* Pinned messages */
+        private Gtk.Revealer pinned_revealer;
+        private Gtk.Box pinned_bar_content;
+        private int[] pinned_msg_ids = {};
+
         public Window (Dc.Application app) {
             Object (
                 application: app,
@@ -237,6 +242,15 @@ namespace Dc {
             message_search_revealer.reveal_child = false;
             message_search_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
             msg_box.append (message_search_revealer);
+
+            /* Pinned messages bar */
+            pinned_bar_content = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            pinned_bar_content.add_css_class ("pinned-bar");
+            pinned_revealer = new Gtk.Revealer ();
+            pinned_revealer.child = pinned_bar_content;
+            pinned_revealer.reveal_child = false;
+            pinned_revealer.transition_type = Gtk.RevealerTransitionType.SLIDE_DOWN;
+            msg_box.append (pinned_revealer);
 
             msg_box.append (message_scroll);
 
@@ -521,6 +535,9 @@ namespace Dc {
                 /* Discard if the user switched chats while fetching. */
                 if (chat_id != current_chat_id) return;
 
+                /* Load pinned message IDs for this chat */
+                pinned_msg_ids = load_pinned_for_chat (chat_id);
+
                 /* Clear and populate in one synchronous pass.
                    Messages are already sorted by the RPC, so append(). */
                 message_store.remove_all ();
@@ -531,6 +548,7 @@ namespace Dc {
 
                 for (uint i = 0; i < messages.length; i++) {
                     var msg = messages[i];
+                    msg.is_pinned = is_msg_pinned (msg.id);
                     message_store.append (msg);
                     message_listbox.append (create_message_row (msg));
                 }
@@ -542,6 +560,9 @@ namespace Dc {
                     scroll_to_bottom ();
                     return Source.REMOVE;
                 });
+
+                /* Update pinned messages bar */
+                update_pinned_bar ();
             } catch (Error e) {
                 show_toast ("Failed to load messages: " + e.message);
             }
@@ -979,6 +1000,16 @@ namespace Dc {
             });
             vbox.append (reply_btn);
 
+            /* Pin / Unpin */
+            bool msg_is_pinned = is_msg_pinned (msg_id);
+            var pin_btn = new Gtk.Button.with_label (msg_is_pinned ? "Unpin" : "Pin");
+            pin_btn.add_css_class ("flat");
+            pin_btn.clicked.connect (() => {
+                popover.popdown ();
+                toggle_message_pin (msg_id);
+            });
+            vbox.append (pin_btn);
+
             if (is_outgoing) {
                 /* Allow editing only if the message has text */
                 bool has_text = false;
@@ -1085,6 +1116,148 @@ namespace Dc {
             } catch (Error e) {
                 show_toast ("Delete failed: " + e.message);
             }
+        }
+
+        /* ================================================================
+         *  Pinned Messages
+         * ================================================================ */
+
+        private bool is_msg_pinned (int msg_id) {
+            foreach (int id in pinned_msg_ids) {
+                if (id == msg_id) return true;
+            }
+            return false;
+        }
+
+        private void toggle_message_pin (int msg_id) {
+            if (is_msg_pinned (msg_id)) {
+                int[] new_ids = {};
+                foreach (int id in pinned_msg_ids) {
+                    if (id != msg_id) new_ids += id;
+                }
+                pinned_msg_ids = new_ids;
+            } else {
+                pinned_msg_ids += msg_id;
+            }
+            save_pinned_for_chat (current_chat_id, pinned_msg_ids);
+            load_messages.begin (current_chat_id);
+        }
+
+        private void update_pinned_bar () {
+            /* Clear existing pinned entries */
+            Gtk.Widget? child;
+            while ((child = pinned_bar_content.get_first_child ()) != null) {
+                pinned_bar_content.remove (child);
+            }
+
+            if (pinned_msg_ids.length == 0) {
+                pinned_revealer.reveal_child = false;
+                return;
+            }
+
+            foreach (int pin_id in pinned_msg_ids) {
+                string? text = null;
+                string? sender = null;
+
+                /* Find the message in the backing store */
+                for (uint j = 0; j < message_store.get_n_items (); j++) {
+                    var m = (Message) message_store.get_item (j);
+                    if (m.id == pin_id) {
+                        text = m.text;
+                        sender = m.is_outgoing ? "You" : (m.sender_name ?? "");
+                        break;
+                    }
+                }
+
+                if (text == null && sender == null) continue;
+
+                var row_btn = new Gtk.Button ();
+                row_btn.add_css_class ("flat");
+
+                var row_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
+
+                var pin_icon = new Gtk.Label ("📌");
+                row_box.append (pin_icon);
+
+                var text_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+                text_box.hexpand = true;
+
+                if (sender != null && sender.length > 0) {
+                    var sender_lbl = new Gtk.Label (sender);
+                    sender_lbl.add_css_class ("caption");
+                    sender_lbl.add_css_class ("dim-label");
+                    sender_lbl.halign = Gtk.Align.START;
+                    text_box.append (sender_lbl);
+                }
+
+                var text_lbl = new Gtk.Label (text ?? "(attachment)");
+                text_lbl.halign = Gtk.Align.START;
+                text_lbl.ellipsize = Pango.EllipsizeMode.END;
+                text_lbl.max_width_chars = 50;
+                text_lbl.lines = 1;
+                text_box.append (text_lbl);
+
+                row_box.append (text_box);
+                row_btn.child = row_box;
+
+                int captured_id = pin_id;
+                row_btn.clicked.connect (() => {
+                    scroll_to_message (captured_id);
+                });
+
+                var outer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+                outer.append (row_btn);
+                row_btn.hexpand = true;
+
+                var unpin_btn = new Gtk.Button.from_icon_name ("window-close-symbolic");
+                unpin_btn.add_css_class ("flat");
+                unpin_btn.add_css_class ("circular");
+                unpin_btn.valign = Gtk.Align.CENTER;
+                unpin_btn.tooltip_text = "Unpin";
+                unpin_btn.clicked.connect (() => {
+                    toggle_message_pin (captured_id);
+                });
+                outer.append (unpin_btn);
+
+                pinned_bar_content.append (outer);
+            }
+
+            pinned_revealer.reveal_child = pinned_bar_content.get_first_child () != null;
+        }
+
+        private int[] load_pinned_for_chat (int chat_id) {
+            int[] ids = {};
+            var kf = new KeyFile ();
+            try {
+                kf.load_from_file (get_config_path (), KeyFileFlags.NONE);
+                string key = "chat_%d".printf (chat_id);
+                string val = kf.get_string ("PinnedMessages", key);
+                foreach (string s in val.split (",")) {
+                    string trimmed = s.strip ();
+                    if (trimmed.length > 0) {
+                        ids += int.parse (trimmed);
+                    }
+                }
+            } catch (Error e) { /* no pinned messages for this chat */ }
+            return ids;
+        }
+
+        private void save_pinned_for_chat (int chat_id, int[] ids) {
+            string key = "chat_%d".printf (chat_id);
+            save_setting_to_file ((kf) => {
+                if (ids.length > 0) {
+                    var sb = new StringBuilder ();
+                    foreach (int id in ids) {
+                        if (sb.len > 0) sb.append (",");
+                        sb.append (id.to_string ());
+                    }
+                    kf.set_string ("PinnedMessages", key, sb.str);
+                } else {
+                    try {
+                        kf.remove_key ("PinnedMessages", key);
+                    } catch (Error e) { }
+                }
+            });
         }
 
         private void start_editing_message (int msg_id) {

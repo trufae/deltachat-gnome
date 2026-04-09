@@ -163,6 +163,10 @@ namespace Dc {
                 font-size: small;
                 opacity: 0.8;
             }
+            .pinned-bar {
+                background-color: alpha(@accent_bg_color, 0.08);
+                border-bottom: 1px solid alpha(@view_fg_color, 0.12);
+            }
         """;
     }
 }

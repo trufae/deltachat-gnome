@@ -158,12 +158,19 @@ namespace Dc {
                 bubble.append (text);
             }
 
-            /* Timestamp */
+            /* Timestamp + pin indicator */
+            var footer = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
+            footer.halign = Gtk.Align.END;
+            if (msg.is_pinned) {
+                var pin_icon = new Gtk.Label ("📌");
+                pin_icon.add_css_class ("message-time");
+                footer.append (pin_icon);
+            }
             var time_str = format_timestamp (msg.timestamp);
             var time_lbl = new Gtk.Label (time_str);
             time_lbl.add_css_class ("message-time");
-            time_lbl.halign = Gtk.Align.END;
-            bubble.append (time_lbl);
+            footer.append (time_lbl);
+            bubble.append (footer);
 
             /* Reactions */
             if (msg.reactions != null && msg.reactions.length > 0) {

@@ -41,6 +41,7 @@ namespace Dc {
         public int quote_msg_id { get; set; default = 0; }
         public string? quote_text { get; set; default = null; }
         public string? quote_sender_name { get; set; default = null; }
+        public bool is_pinned { get; set; default = false; }
     }
 
     public class FoundInstallation : Object {
