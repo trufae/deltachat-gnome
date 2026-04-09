@@ -348,6 +348,7 @@ namespace Dc {
                     chat_listbox.remove (row);
                 }
 
+                Gtk.ListBoxRow? reselect_row = null;
                 for (uint i = 0; i < entries.get_length (); i++) {
                     int chat_id = (int) entries.get_int_element (i);
                     string id_str = chat_id.to_string ();
@@ -359,7 +360,16 @@ namespace Dc {
 
                         var chat_row = new ChatRow (entry);
                         chat_listbox.append (chat_row);
+
+                        if (chat_id == current_chat_id) {
+                            reselect_row = chat_listbox.get_row_at_index ((int) i);
+                        }
                     }
+                }
+
+                /* Re-select the active chat so it stays highlighted */
+                if (reselect_row != null) {
+                    chat_listbox.select_row (reselect_row);
                 }
             } catch (Error e) {
                 show_toast ("Failed to load chats: " + e.message);
@@ -413,8 +423,20 @@ namespace Dc {
             load_messages.begin (current_chat_id);
             compose_bar.grab_entry_focus ();
 
+            /* Mark chat as noticed (clears fresh counter without sending read receipts) */
+            notice_chat.begin (current_chat_id);
+
             /* On narrow layout, navigate to content */
             split_view.show_content = true;
+        }
+
+        private async void notice_chat (int chat_id) {
+            var rpc = ((Dc.Application) this.application).rpc;
+            try {
+                yield rpc.marknoticed_chat (rpc.account_id, chat_id);
+            } catch (Error e) {
+                /* non-critical */
+            }
         }
 
         /* ================================================================
@@ -459,7 +481,13 @@ namespace Dc {
                     message_listbox.append (create_message_row (msg));
                 }
 
-                scroll_to_bottom ();
+                /* Defer scroll until GTK has laid out the new rows,
+                   otherwise the adjustment upper is stale. */
+                stick_to_bottom = true;
+                Idle.add (() => {
+                    scroll_to_bottom ();
+                    return Source.REMOVE;
+                });
             } catch (Error e) {
                 show_toast ("Failed to load messages: " + e.message);
             }
@@ -633,7 +661,7 @@ namespace Dc {
         }
 
         /* ================================================================
-         *  Message Listener
+         *  Event Loop
          * ================================================================ */
 
         private async void start_listener () {
@@ -642,45 +670,117 @@ namespace Dc {
 
             var rpc = ((Dc.Application) this.application).rpc;
 
-            while (rpc.is_connected && rpc.account_id > 0) {
+            while (rpc.is_connected) {
                 try {
-                    int[] new_ids = yield rpc.wait_next_msgs (rpc.account_id);
+                    var ev = yield rpc.get_next_event ();
+                    if (ev == null) continue;
 
-                    foreach (int msg_id in new_ids) {
-                        var msg_obj = yield rpc.get_message (rpc.account_id, msg_id);
-                        if (msg_obj == null) continue;
+                    int ctx = (int) ev.get_int_member ("contextId");
+                    if (ctx != rpc.account_id) continue;
 
-                        var msg = RpcClient.parse_message (msg_obj, self_email);
+                    var event = ev.get_object_member ("event");
+                    if (event == null) continue;
 
-                        /* Skip self messages and info messages without text */
-                        if (msg.is_outgoing) continue;
-                        if (msg.text == null && msg.file_path == null) continue;
-
-                        /* Mark as seen */
-                        yield rpc.mark_seen_msgs (rpc.account_id, new int[] { msg_id });
-
-                        /* If this message belongs to current chat, add it.
-                           Auto-scroll kicks in if user was at bottom. */
-                        if (msg.chat_id == current_chat_id) {
-                            message_store.append (msg);
-                            var row = create_message_row (msg);
-                            insert_message_sorted (row);
-                            row.highlight ();
-                        }
-
-                        /* Refresh chat list to update previews */
-                        yield load_chats ();
-                    }
+                    string kind = event.get_string_member ("kind");
+                    yield handle_event (kind, event);
                 } catch (Error e) {
                     if (rpc.is_connected) {
-                        warning ("Listener error: %s", e.message);
-                        /* Brief pause before retry */
+                        warning ("Event loop error: %s", e.message);
                         yield nap (1000);
                     }
                 }
             }
 
             listening = false;
+        }
+
+        private async void handle_event (string kind, Json.Object event) {
+            switch (kind) {
+            case "IncomingMsg":
+                int chat_id = (int) event.get_int_member ("chatId");
+                int msg_id = (int) event.get_int_member ("msgId");
+                yield on_incoming_msg (chat_id, msg_id);
+                break;
+
+            case "MsgsChanged":
+                int changed_chat = (int) event.get_int_member ("chatId");
+                /* Broad change or change in the current chat — reload messages */
+                if (changed_chat == 0 || changed_chat == current_chat_id) {
+                    if (current_chat_id > 0) {
+                        yield load_messages (current_chat_id);
+                    }
+                }
+                break;
+
+            case "MsgDelivered":
+            case "MsgRead":
+            case "MsgFailed":
+                int state_chat = (int) event.get_int_member ("chatId");
+                if (state_chat == current_chat_id && current_chat_id > 0) {
+                    yield load_messages (current_chat_id);
+                }
+                break;
+
+            case "MsgDeleted":
+                int del_chat = (int) event.get_int_member ("chatId");
+                if (del_chat == current_chat_id && current_chat_id > 0) {
+                    yield load_messages (current_chat_id);
+                }
+                break;
+
+            case "ChatlistChanged":
+                yield load_chats ();
+                break;
+
+            case "ChatlistItemChanged":
+                /* Could do selective update, but full reload is simple and correct */
+                yield load_chats ();
+                break;
+
+            case "MsgsNoticed":
+                yield load_chats ();
+                break;
+
+            case "ChatModified":
+            case "ChatDeleted":
+                yield load_chats ();
+                break;
+
+            case "ReactionsChanged":
+                int rx_chat = (int) event.get_int_member ("chatId");
+                if (rx_chat == current_chat_id && current_chat_id > 0) {
+                    yield load_messages (current_chat_id);
+                }
+                break;
+
+            default:
+                /* Info, Warning, ConnectivityChanged, etc. — ignore */
+                break;
+            }
+        }
+
+        private async void on_incoming_msg (int chat_id, int msg_id) {
+            var rpc = ((Dc.Application) this.application).rpc;
+
+            if (chat_id == current_chat_id && current_chat_id > 0) {
+                /* Message is in the active chat — show it and mark seen */
+                try {
+                    var msg_obj = yield rpc.get_message (rpc.account_id, msg_id);
+                    if (msg_obj != null) {
+                        var msg = RpcClient.parse_message (msg_obj, self_email);
+                        message_store.append (msg);
+                        var row = create_message_row (msg);
+                        insert_message_sorted (row);
+                        row.highlight ();
+                    }
+                    yield rpc.mark_seen_msgs (rpc.account_id, new int[] { msg_id });
+                } catch (Error e) {
+                    warning ("Failed to handle incoming msg: %s", e.message);
+                }
+            }
+            /* For all incoming messages (current chat or not), refresh the
+               chat list to update preview text and unread counters. */
+            yield load_chats ();
         }
 
         /* ================================================================

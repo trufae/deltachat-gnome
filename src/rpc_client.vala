@@ -438,6 +438,10 @@ namespace Dc {
             yield call ("send_reaction", b.get_root ());
         }
 
+        public async void marknoticed_chat (int acct_id, int chat_id) throws Error {
+            yield call ("marknoticed_chat", build_params_int2 (acct_id, chat_id));
+        }
+
         public async void mark_seen_msgs (int acct_id, int[] msg_ids) throws Error {
             var b = new Json.Builder ();
             b.begin_array ();
@@ -449,16 +453,16 @@ namespace Dc {
             yield call ("markseen_msgs", b.get_root ());
         }
 
-        public async int[] wait_next_msgs (int acct_id) throws Error {
-            var result = yield call ("wait_next_msgs", build_params_int (acct_id));
-            if (result == null || result.get_node_type () != Json.NodeType.ARRAY)
-                return new int[0];
-            var arr = result.get_array ();
-            int[] ids = new int[arr.get_length ()];
-            for (uint i = 0; i < arr.get_length (); i++) {
-                ids[i] = (int) arr.get_int_element (i);
-            }
-            return ids;
+        /**
+         * Blocks until the next event from the RPC server.
+         * Returns the full event result: { contextId, event: { kind, ... } }
+         * This is a global call (not per-account).
+         */
+        public async Json.Object? get_next_event () throws Error {
+            var result = yield call ("get_next_event", build_params ());
+            if (result == null || result.get_node_type () != Json.NodeType.OBJECT)
+                return null;
+            return result.get_object ();
         }
 
         public async int create_contact (int acct_id, string email) throws Error {
@@ -705,6 +709,18 @@ namespace Dc {
             if (obj.has_member ("avatarPath") &&
                 !obj.get_member ("avatarPath").is_null ()) {
                 entry.avatar_path = obj.get_string_member ("avatarPath");
+            }
+            if (obj.has_member ("isMuted")) {
+                entry.is_muted = obj.get_boolean_member ("isMuted");
+            }
+            if (obj.has_member ("isContactRequest")) {
+                entry.is_contact_request = obj.get_boolean_member ("isContactRequest");
+            }
+            if (obj.has_member ("isArchived")) {
+                entry.is_archived = obj.get_boolean_member ("isArchived");
+            }
+            if (obj.has_member ("isPinned")) {
+                entry.is_pinned = obj.get_boolean_member ("isPinned");
             }
 
             return entry;

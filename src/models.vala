@@ -16,6 +16,10 @@ namespace Dc {
         public int unread_count { get; set; default = 0; }
         public string? avatar_path { get; set; default = null; }
         public int chat_type { get; set; default = 0; }
+        public bool is_muted { get; set; default = false; }
+        public bool is_contact_request { get; set; default = false; }
+        public bool is_archived { get; set; default = false; }
+        public bool is_pinned { get; set; default = false; }
     }
 
     public class Message : Object {

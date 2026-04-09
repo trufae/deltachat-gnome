@@ -81,11 +81,34 @@ namespace Dc {
             .chat-row { border-radius: 8px; padding: 4px; }
             .unread-dot {
                 color: @accent_bg_color;
-                font-size: 8px;
+                font-size: 12px;
+            }
+            .unread-dot-muted {
+                color: alpha(@view_fg_color, 0.4);
+                font-size: 12px;
+            }
+            .unread-name {
+                font-weight: 800;
             }
             .unread-badge {
                 background-color: @accent_bg_color;
                 color: @accent_fg_color;
+                border-radius: 10px;
+                padding: 0 6px;
+                min-width: 20px; min-height: 20px;
+                font-size: small; font-weight: bold;
+            }
+            .unread-badge-muted {
+                background-color: alpha(@view_fg_color, 0.35);
+                color: @view_bg_color;
+                border-radius: 10px;
+                padding: 0 6px;
+                min-width: 20px; min-height: 20px;
+                font-size: small; font-weight: bold;
+            }
+            .contact-request-badge {
+                background-color: @warning_bg_color;
+                color: @warning_fg_color;
                 border-radius: 10px;
                 padding: 0 6px;
                 min-width: 20px; min-height: 20px;

@@ -43,14 +43,20 @@ namespace Dc {
             /* Top row: name + time */
             var top = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
 
-            if (entry.unread_count > 0) {
+            /* Show unread dot only for real unread chats, not contact requests */
+            bool has_unread = entry.unread_count > 0 && !entry.is_contact_request;
+
+            if (has_unread) {
                 var dot = new Gtk.Label ("\u25CF");
-                dot.add_css_class ("unread-dot");
+                dot.add_css_class (entry.is_muted ? "unread-dot-muted" : "unread-dot");
                 top.append (dot);
             }
 
             name_label = new Gtk.Label (entry.name);
             name_label.add_css_class ("heading");
+            if (has_unread) {
+                name_label.add_css_class ("unread-name");
+            }
             name_label.ellipsize = Pango.EllipsizeMode.END;
             name_label.hexpand = true;
             name_label.halign = Gtk.Align.START;
@@ -67,7 +73,9 @@ namespace Dc {
             /* Bottom row: preview + badge */
             var bot = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 6);
             preview_label = new Gtk.Label (entry.last_message ?? "");
-            preview_label.add_css_class ("dim-label");
+            if (!has_unread) {
+                preview_label.add_css_class ("dim-label");
+            }
             preview_label.ellipsize = Pango.EllipsizeMode.END;
             preview_label.hexpand = true;
             preview_label.halign = Gtk.Align.START;
@@ -75,9 +83,16 @@ namespace Dc {
             preview_label.max_width_chars = 30;
             bot.append (preview_label);
 
-            if (entry.unread_count > 0) {
+            /* Contact requests get a "Request" label instead of a count badge */
+            if (entry.is_contact_request) {
+                badge_label = new Gtk.Label ("Request");
+                badge_label.add_css_class ("contact-request-badge");
+                badge_label.halign = Gtk.Align.END;
+                badge_label.valign = Gtk.Align.CENTER;
+                bot.append (badge_label);
+            } else if (has_unread) {
                 badge_label = new Gtk.Label (entry.unread_count.to_string ());
-                badge_label.add_css_class ("unread-badge");
+                badge_label.add_css_class (entry.is_muted ? "unread-badge-muted" : "unread-badge");
                 badge_label.halign = Gtk.Align.END;
                 badge_label.valign = Gtk.Align.CENTER;
                 bot.append (badge_label);
