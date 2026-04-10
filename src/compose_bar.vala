@@ -108,7 +108,11 @@ namespace Dc {
         }
 
         public void grab_entry_focus () {
-            text_entry.grab_focus ();
+            /* Use grab_focus_without_selecting so that text the user is
+               currently typing is not selected (and thus replaced on the
+               next keystroke) when async events — e.g. an incoming message
+               triggering a chatlist reload — steal focus back to the entry. */
+            text_entry.grab_focus_without_selecting ();
         }
 
         public void clear () {
@@ -155,7 +159,7 @@ namespace Dc {
             replying_msg_id = msg_id;
             reply_label.label = "%s: %s".printf (sender_name, preview);
             reply_bar.visible = true;
-            text_entry.grab_focus ();
+            text_entry.grab_focus_without_selecting ();
         }
 
         private void cancel_reply () {
@@ -173,7 +177,8 @@ namespace Dc {
             text_entry.placeholder_text = "Edit message…";
             cancel_edit_button.visible = true;
             attach_button.sensitive = false;
-            text_entry.grab_focus ();
+            text_entry.grab_focus_without_selecting ();
+            text_entry.set_position (-1);
         }
 
         private void cancel_edit () {
