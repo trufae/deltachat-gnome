@@ -6,6 +6,10 @@ namespace Dc {
      */
     public class ComposeBar : Gtk.Box {
 
+        /* When false (default), Return sends and Shift+Return inserts a
+           newline. When true, the roles are swapped. */
+        public static bool shift_enter_sends = false;
+
         public signal void send_message (string text, string? file_path, string? file_name, int quote_msg_id);
         public signal void edit_message (int msg_id, string new_text);
 
@@ -268,7 +272,8 @@ namespace Dc {
             if (keyval == Gdk.Key.Return
                 || keyval == Gdk.Key.KP_Enter
                 || keyval == Gdk.Key.ISO_Enter) {
-                if (shift) return false; /* let TextView insert a newline */
+                bool should_send = shift_enter_sends ? shift : !shift;
+                if (!should_send) return false; /* let TextView insert a newline */
                 on_send ();
                 return true;
             }

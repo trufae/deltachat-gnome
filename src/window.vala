@@ -44,6 +44,7 @@ namespace Dc {
         private bool loading_chat = false;
         public int double_click_action { get; set; default = 0; }
         public bool markdown_rendering { get; set; default = false; }
+        public bool shift_enter_sends { get; set; default = false; }
 
         /* Pinned messages */
         private Gtk.Revealer pinned_revealer;
@@ -2110,6 +2111,14 @@ namespace Dc {
             });
         }
 
+        public void save_shift_enter_sends (bool enabled) {
+            shift_enter_sends = enabled;
+            ComposeBar.shift_enter_sends = enabled;
+            save_setting_to_file ((kf) => {
+                kf.set_boolean ("General", "shift_enter_sends", enabled);
+            });
+        }
+
         private delegate void SettingWriter (KeyFile kf);
 
         private void save_setting_to_file (SettingWriter writer) {
@@ -2135,6 +2144,8 @@ namespace Dc {
                 double_click_action = 0;
                 markdown_rendering = false;
                 Markdown.enabled = false;
+                shift_enter_sends = false;
+                ComposeBar.shift_enter_sends = false;
                 return;
             }
             try {
@@ -2150,6 +2161,13 @@ namespace Dc {
                 markdown_rendering = false;
             }
             Markdown.enabled = markdown_rendering;
+            try {
+                shift_enter_sends = kf.get_boolean (
+                    "General", "shift_enter_sends");
+            } catch (Error e) {
+                shift_enter_sends = false;
+            }
+            ComposeBar.shift_enter_sends = shift_enter_sends;
         }
 
         /* ================================================================

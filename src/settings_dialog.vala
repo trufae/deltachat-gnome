@@ -94,6 +94,21 @@ namespace Dc {
             md_row.activatable_widget = md_switch;
 
             behavior_list.append (md_row);
+
+            var shift_row = new Adw.ActionRow ();
+            shift_row.title = "Shift+Return sends message";
+            shift_row.subtitle = "When on, Return inserts a newline and Shift+Return sends";
+
+            var shift_switch = new Gtk.Switch ();
+            shift_switch.active = app_window.shift_enter_sends;
+            shift_switch.valign = Gtk.Align.CENTER;
+            shift_switch.notify["active"].connect (() => {
+                app_window.save_shift_enter_sends (shift_switch.active);
+            });
+            shift_row.add_suffix (shift_switch);
+            shift_row.activatable_widget = shift_switch;
+
+            behavior_list.append (shift_row);
             content.append (behavior_list);
 
             var scroll = new Gtk.ScrolledWindow ();
